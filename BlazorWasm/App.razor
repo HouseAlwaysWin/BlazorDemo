@@ -1,0 +1,17 @@
+﻿@*程式啟動時會掃描指定為路由器 AppAssembly,然後用來搜集具有RouteAttribute屬性的元件,在.razor檔中標記為@page的頁面*@
+<Router AppAssembly="@typeof(App).Assembly">
+    @*找到對應路由要顯示內容*@
+    <Found Context="routeData">
+        @*配置路由必要參數和預設進入的頁面,預設通常是MainLayout*@
+        <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
+        @*進入頁面的時候會Foucs的選擇器*@
+        <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+    </Found>
+    @*找不到對應路由要顯示內容*@
+    <NotFound>
+        <PageTitle>Not found</PageTitle>
+        <LayoutView Layout="@typeof(MainLayout)">
+            <p role="alert">Sorry, there's nothing at this address.</p>
+        </LayoutView>
+    </NotFound>
+</Router>
