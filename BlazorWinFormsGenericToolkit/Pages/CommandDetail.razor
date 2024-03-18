@@ -1,0 +1,189 @@
+﻿@page "/command-detail/{commandKey}"
+@using System.Text.Json.Nodes;
+@using CliWrap;
+@using CliWrap.EventStream;
+@using System.Text;
+@using Microsoft.AspNetCore.SignalR.Client;
+@inject NavigationManager NavigationManager;
+@inject DataTransferService<CommandGroup> _dataTransferService;
+@inject CommandService _commandService;
+@inject IDialogService _dialogService
+
+
+<MudGrid Justify="Justify.FlexStart" Spacing="2">
+
+	<MudItem xs="12" Class="mt-auto">
+		<MudText>@Content?.CommandName</MudText>
+	</MudItem>
+
+	<MudItem Class="mt-auto">
+		<MudButton Color="Color.Info" Variant="Variant.Filled" Size="Size.Medium" OnClick="(e => RunAllCommand())">執行全部指令</MudButton>
+	</MudItem>
+
+	<MudItem Class="mt-auto">
+		<MudButton Color="Color.Secondary" Variant="Variant.Filled" Size="Size.Medium" OnClick="(e => UpdateCommand())">更新指令</MudButton>
+	</MudItem>
+
+	<MudItem Class="mt-auto">
+		<MudButton Color="Color.Secondary" Variant="Variant.Outlined" Size="Size.Medium" OnClick="@(e => GoBack())">返回</MudButton>
+	</MudItem>
+
+	<MudItem xs="12" Class="mt-auto">
+		<MudGrid Justify="Justify.FlexStart" Spacing="2">
+
+			<MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-6">
+				@if (Content.CommandList.Count > 0)
+				{
+					@for (int i = 0; i < Content.CommandList.Count; i++)
+					@*@foreach (CommandItem item in Content.CommandList)*@
+					{
+						var item = Content.CommandList[i];
+						var commandName = string.IsNullOrWhiteSpace(item.Name) ? $"指令{i + 1}" : item.Name;
+						<MudTabPanel Text="@(commandName)">
+
+							<MudGrid Justify="Justify.FlexStart" Spacing="2">
+								<MudItem Class="mt-auto">
+									<MudButton Color="Color.Info" Variant="Variant.Filled" Size="Size.Medium" Disabled="@(item.IsRunning)" OnClick="@(e => RunCommand(item))">執行</MudButton>
+								</MudItem>
+
+
+								<MudItem Class="mt-auto">
+									<MudButton Color="Color.Error" Variant="Variant.Filled" Size="Size.Medium" Disabled="@(!item.IsRunning)" OnClick="@(e => CloseCmd(item))">關閉</MudButton>
+								</MudItem>
+
+								<MudItem Class="mt-auto">
+									<MudButton Color="Color.Dark" Variant="Variant.Filled" Size="Size.Medium" OnClick="@(e => ClearLog(item))">清除畫面</MudButton>
+								</MudItem>
+
+
+								<MudItem xs="12" Class="mt-auto">
+									<MudAlert Severity="Severity.Info" Variant="Variant.Outlined">指令: @item.Command @item.Arguments</MudAlert>
+								</MudItem>
+
+								<MudItem xs="12" Class="mt-auto">
+									<MudAlert Severity="Severity.Info" Variant="Variant.Outlined">Port: @item.Port</MudAlert>
+								</MudItem>
+
+
+								<MudItem xs="12" Class="mt-auto">
+									<MudAlert Severity="Severity.Info" Variant="Variant.Outlined">Encoding: @item.Encoding</MudAlert>
+								</MudItem>
+
+								<MudItem xs="12" Class="mt-auto">
+									<MudAlert Severity="Severity.Info" Variant="Variant.Outlined">主視窗 PID: @item.MainPID</MudAlert>
+								</MudItem>
+
+								<MudItem xs="12" Class="mt-auto">
+									<MudAlert Severity="Severity.Info" Variant="Variant.Outlined">副視窗(Web Service) PID: @item.SubPID</MudAlert>
+								</MudItem>
+
+							</MudGrid>
+							<MudItem xs="12" Class="mt-auto">
+
+								<MudPaper Class="mud-theme-dark overflow-auto text-break" id="@(item.MainPID)">
+									<MudContainer Style="height: 500px;  color: ghostwhite">
+										@foreach (JsonObject log in item.OutputLogs)
+										{
+											@((MarkupString)(log.ToValue("Text").ToHtmlString().GetLogColor(log.ToValue("Type"))))
+											<br />
+										}
+									</MudContainer>
+								</MudPaper>
+							</MudItem>
+						</MudTabPanel>
+					}
+				}
+			</MudTabs>
+
+		</MudGrid>
+	</MudItem>
+</MudGrid>
+
+
+
+
+@code {
+	[Parameter]
+	public string? CommandKey { get; set; }
+
+	public CommandGroup Content { get; set; } = new CommandGroup();
+
+	protected override async Task OnInitializedAsync()
+	{
+		//var commandGroups = await _commandService.GetAllCommandGroups();
+		//Content = commandGroups.FirstOrDefault(c => c.CommandKey == CommandKey);
+		Content = await _commandService.GetCommandGroup(CommandKey);
+		//Content =  CommandData.CommandGroups.FirstOrDefault(c => c.CommandKey == CommandKey);
+		_dataTransferService.ReceivedData += ReceiveData;
+	}
+
+	public void Dispose()
+	{
+		_dataTransferService.ReceivedData -= ReceiveData;
+	}
+
+	private async void ReceiveData(object data)
+	{
+		await InvokeAsync(() =>
+		{
+			Content = (CommandGroup)data;
+			Content.CommandList = ((CommandGroup)data).CommandList;
+			if (Content.CommandKey == CommandKey)
+			{
+				StateHasChanged();
+			}
+		});
+	}
+
+	public void GoBack()
+	{
+		NavigationManager.NavigateTo("/command-runner");
+	}
+
+	public async Task RunAllCommand()
+	{
+		var tasks = new List<Task>();
+		foreach (var cmd in Content.CommandList)
+		{
+			cmd.OutputLogs.Clear();
+			tasks.Add(RunCommand(cmd));
+		}
+		await Task.WhenAny(tasks);
+	}
+
+
+	public async Task RunCommand(CommandItem cmd)
+	{
+		try
+		{
+			await _commandService.RunCommand(cmd, Content);
+		}
+		catch (Exception ex)
+		{
+			await _dialogService.ShowMessageBox("錯誤訊息", ex.ToString());
+		}
+	}
+
+	public async Task UpdateCommand()
+	{
+		NavigationManager.NavigateTo($"/command-update-item/{Content.CommandKey}");
+	}
+
+	public void ClearLog(CommandItem item)
+	{
+		item.OutputLogs.Clear();
+	}
+
+
+	public async void CloseCmd(CommandItem item)
+	{
+		try
+		{
+			_commandService.CloseCmd(item);
+		}
+		catch (Exception ex)
+		{
+			await _dialogService.ShowMessageBox("發生錯誤", ex.ToString());
+		}
+	}
+}

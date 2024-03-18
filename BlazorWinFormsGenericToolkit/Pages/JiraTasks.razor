@@ -1,0 +1,948 @@
+﻿@page "/jira-task"
+@using BlazorWinFormsGenericToolKit.Models.Enums;
+@using BlazorWinFormsGenericToolKit.Shared.Dialogs;
+@using Microsoft.AspNetCore.Components.Rendering;
+@using Microsoft.AspNetCore.Mvc.ViewFeatures;
+@using Microsoft.Extensions.Logging;
+@using Microsoft.JSInterop;
+@using MudBlazor.Utilities;
+@using Polly.CircuitBreaker;
+@using Polly;
+@using Razor.Templating.Core;
+@using BlazorWinFormsGenericToolKit.Core.Extensions;
+@using System.Web;
+@using System.Text.Json.Nodes;
+@using System.Net.Http.Headers;
+@using System.Text.Json;
+@using System.Text.RegularExpressions;
+@using System.Text;
+
+@inject IJSRuntime JsRuntime
+@inject IFolderPicker _folderPicker
+@inject IDialogService _dialogService
+@inject IServiceProvider _serviceProvider
+@inject ILoggerFactory _loggerFactory
+@inject IConfigServices _configService
+
+<MudGrid Justify="Justify.FlexStart">
+	<MudItem xs="4" Class="mt-auto">
+		<MudTextField Value="Username"
+					  T="string"
+					  DebounceInterval="500"
+					  ValueChanged="OnChangeUserName"
+					  Label="使用者名稱"
+					  Variant="Variant.Text"></MudTextField>
+	</MudItem>
+	<MudItem xs="4" Class="mt-auto">
+		<MudTextField Value="Password"
+					  T="string"
+					  DebounceInterval="500"
+					  ValueChanged="OnChangePassword"
+					  Label="密碼"
+					  Variant="Variant.Text"
+					  InputType="@PasswordInput"
+					  Adornment="Adornment.End"
+					  AdornmentIcon="@PasswordInputIcon"
+					  OnAdornmentClick="ButtonTestclick"
+					  AdornmentAriaLabel="Show Password"></MudTextField>
+	</MudItem>
+	<MudItem xs="4" Class="mt-auto">
+		<MudButton Variant="Variant.Filled"
+				   Color="Color.Primary"
+				   Class="px-2"
+				   OnClick="GetTaskInfos">查詢</MudButton>
+	</MudItem>
+	@if (Issues != null && Issues.Count > 0)
+	{
+
+		<MudItem xs="12" Class="mt-auto">
+			<MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-6">
+				<MudTabPanel Text="待辦工作">
+
+					<MudExpansionPanels>
+						@if (Issues != null)
+						{
+							@foreach (var issue in Issues)
+							{
+
+								var erpId = issue.ToValue("key");
+								var id = $"toDoTasks_{erpId}";
+								var ifUrl = @$"http://172.20.10.106:5050/browse/{erpId}";
+								var fields = issue.ToJsonObject("fields");
+								var description = fields.ToValue("description")?.ToHtmlString();
+								var commentInfo = issue.ToJsonObject("commentInfo");
+								var comments = commentInfo["comments"]?.AsArray();
+								var creator = fields.ToJsonObject("creator");
+								var creatorName = creator.ToValue("displayName");
+								var createDate = (DateTime.Parse(fields.ToValue("created"))).ToString("yyyy-MM-dd HH:mm:ss");
+								var reporter = fields.ToJsonObject("reporter");
+								var reporterName = reporter.ToValue("displayName");
+								var status = fields.ToJsonObject("status");
+								var statusName = status.ToValue("name");
+								string statusAlias = GetStatusAlias(statusName?.ToString());
+								var summary = $"【{erpId}】 {fields.ToValue("summary")} {GetStatusAlias(statusName?.ToString())}";
+
+								<MudExpansionPanel Text="@summary" id="@id" @onclick="()=>OnExpendedClicked(id)">
+									<MudGrid Justify="Justify.FlexStart">
+										<MudItem xs="12">
+											<MudText><span class="info-title">單號:</span> @erpId</MudText>
+										</MudItem>
+
+
+										<MudItem xs="12">
+											<MudText><span class="info-title">開單人員:</span> @reporterName</MudText>
+										</MudItem>
+
+
+										<MudItem xs="12">
+											<MudText><span class="info-title">開單時間:</span> @createDate</MudText>
+										</MudItem>
+
+										<MudItem xs="4" Class="mt-auto">
+											<MudText><span class="info-title">狀態:</span> @GetStatusAlias(statusName?.ToString())</MudText>
+										</MudItem>
+
+										<MudItem xs="4" Class="mt-auto">
+											<MudSelect T="string" Label=" 設定狀態" Variant="Variant.Filled" AnchorOrigin="Origin.BottomCenter" ValueChanged="OnChangedIssueStatus" Value="@CurrentIssueStatusLabel">
+												@foreach (JsonObject status in IssueStatusList)
+												{
+													<MudSelectItem Value="@status.ToValue("Label")" />
+												}
+											</MudSelect>
+										</MudItem>
+										<MudItem xs="4" Class="mt-auto">
+											<MudButton Variant="Variant.Filled"
+													   Color="Color.Primary"
+													   Class="px-2"
+													   OnClick="()=> SubmitIssueStatus(erpId)">改變狀態</MudButton>
+										</MudItem>
+
+										<MudItem xs="12">
+											<MudText><span class="info-title">網頁連結:</span></MudText>
+											<MudLink Href="@ifUrl">@ifUrl</MudLink>
+										</MudItem>
+
+										@if (!string.IsNullOrWhiteSpace(description))
+										{
+											<MudItem xs="12">
+												<MudText>
+													<span class="info-title">描述:</span> <br /> @((MarkupString)description)
+												</MudText>
+											</MudItem>
+										}
+										<MudItem xs="12">
+
+											@if (comments != null && comments.Count > 0)
+											{
+												<MudText>
+													<span class="info-title">回覆 :</span>
+													<br />
+													<br />
+
+													@foreach (var cm in comments)
+													{
+														var author = cm?["author"];
+														var authorName = author?["name"];
+														var body = cm?["body"];
+														<text>@authorName:</text>
+														<br />
+														<br />
+														@((MarkupString)body?.ToString()?.ToHtmlString())
+													}
+												</MudText>
+											}
+										</MudItem>
+
+									</MudGrid>
+								</MudExpansionPanel>
+							}
+						}
+					</MudExpansionPanels>
+				</MudTabPanel>
+
+				<MudTabPanel Text="異動工作">
+					<MudTextField Value="CustomUsername"
+								  ValueChanged="OnChangeWeekUserName"
+								  T="string"
+								  DebounceInterval="500"
+								  Label="查詢使用者"
+								  Disabled="@(SameAsUsername || AllBTeam)"
+								  Variant="Variant.Text"></MudTextField>
+					<MudGrid>
+						<MudItem>
+							<MudCheckBox T="bool"
+										 CheckedChanged="SameAsUsernameChanged"
+										 Checked="@SameAsUsername"
+										 Class="py-0"
+										 Size="Size.Small"
+										 Label="同上使用者"></MudCheckBox>
+						</MudItem>
+						<MudItem>
+							<MudCheckBox T="bool"
+										 CheckedChanged="AllBTeamChanged"
+										 Checked="@AllBTeam"
+										 Class="py-0"
+										 Size="Size.Small"
+										 Label="B組"></MudCheckBox>
+
+						</MudItem>
+					</MudGrid>
+
+					<MudRadioGroup T="SearchJiraTaskTimeOptions" SelectedOption="CurrentJiraTaskTimeOption" SelectedOptionChanged="CurrentJiraTaskTimeOptionChange">
+						<MudRadio Option="@(SearchJiraTaskTimeOptions.THIS_WEEK)" Color="Color.Primary">本週</MudRadio>
+						<MudRadio Option="@(SearchJiraTaskTimeOptions.LAST_WEEK)" Color="Color.Primary">上一週</MudRadio>
+						<MudRadio Option="@(SearchJiraTaskTimeOptions.THIS_MONTH)" Color="Color.Primary">本月</MudRadio>
+						<MudRadio Option="@(SearchJiraTaskTimeOptions.LAST_MONTH)" Color="Color.Primary">上個月</MudRadio>
+						<MudRadio Option="@(SearchJiraTaskTimeOptions.OTHERS)" Color="Color.Primary">自訂</MudRadio>
+					</MudRadioGroup>
+
+					@if (CurrentJiraTaskTimeOption == SearchJiraTaskTimeOptions.OTHERS)
+					{
+						<MudGrid>
+							<MudItem xs="6">
+								<MudDatePicker Label="yyyy-MM-dd" Editable="true" @bind-Date="SearchStartDate" DateFormat="yyyy-MM-dd" Placeholder="起始日期" />
+							</MudItem>
+							<MudItem xs="6">
+								<MudDatePicker Label="yyyy-MM-dd" Editable="true" @bind-Date="SearchEndDate" DateFormat="yyyy-MM-dd" Placeholder="結束日期" />
+							</MudItem>
+						</MudGrid>
+						<MudButton Variant="Variant.Filled"
+								   Color="Color.Success"
+								   Class="px-2"
+								   OnClick="()=>GetTaskInfos()">查詢</MudButton>
+					}
+
+					<MudButton Variant="Variant.Filled"
+							   Color="Color.Primary"
+							   Class="px-2"
+							   OnClick="()=>CopyToClipboard(WeekTasks)">複製異動單狀態</MudButton>
+					<MudExpansionPanels>
+
+						@if (WeekTasks != null)
+						{
+							var weekTaskDic = WeekTasks.GroupBy(iss => iss["fields"]["assignee"].ToValue("name"))
+							.ToDictionary(r => r.Key, r => r.Select(s => s));
+
+							foreach (var name in weekTaskDic.Keys)
+							{
+								<MudText>@name</MudText>
+								@foreach (var issue in weekTaskDic[name])
+								{
+									var erpId = issue.ToValue("key");
+									var id = $"weekTasks_{erpId}";
+									var ifUrl = @$"http://172.20.10.106:5050/browse/{erpId}";
+									var fields = issue.ToJsonObject("fields");
+									var description = fields.ToValue("description")?.ToHtmlString();
+									var commentInfo = issue.ToJsonObject("commentInfo");
+									var comments = commentInfo["comments"]?.AsArray();
+									var creator = fields.ToJsonObject("creator");
+									var creatorName = creator.ToValue("displayName");
+									var createDate = (DateTime.Parse(fields.ToValue("created"))).ToString("yyyy-MM-dd HH:mm:ss");
+									var reporter = fields.ToJsonObject("reporter");
+									var reporterName = reporter.ToValue("displayName");
+									var status = fields.ToJsonObject("status");
+									var statusName = status.ToValue("name");
+									var assignee = fields["assignee"].ToValue("name");
+									string statusAlias = GetStatusAlias(statusName?.ToString());
+									var summary = $"【{erpId}】 {fields.ToValue("summary")} {GetStatusAlias(statusName?.ToString())}";
+
+									<MudExpansionPanel Text="@summary" id="@id" @onclick="()=>OnExpendedClicked(id)">
+										<MudGrid Justify="Justify.FlexStart">
+											<MudItem xs="12">
+												<MudText><span class="info-title">單號:</span> @issue.ToValue("key")</MudText>
+											</MudItem>
+
+											<MudItem xs="12">
+												<MudText><span class="info-title">開單人員:</span> @reporterName</MudText>
+											</MudItem>
+
+
+											<MudItem xs="12">
+												<MudText><span class="info-title">開單時間:</span> @createDate</MudText>
+											</MudItem>
+
+											<MudItem xs="4" Class="mt-auto">
+												<MudText><span class="info-title">狀態:</span> @GetStatusAlias(statusName?.ToString())</MudText>
+											</MudItem>
+
+											<MudItem xs="4" Class="mt-auto">
+												<MudSelect T="string" Label=" 設定狀態" Variant="Variant.Filled" AnchorOrigin="Origin.BottomCenter" ValueChanged="OnChangedIssueStatus" Value="@CurrentIssueStatusLabel">
+													@foreach (JsonObject status in IssueStatusList)
+													{
+														<MudSelectItem Value="@status.ToValue("Label")" />
+													}
+												</MudSelect>
+											</MudItem>
+											<MudItem xs="4" Class="mt-auto">
+												<MudButton Variant="Variant.Filled"
+														   Color="Color.Primary"
+														   Class="px-2"
+														   OnClick="()=> SubmitIssueStatus(erpId)">改變狀態</MudButton>
+											</MudItem>
+
+											<MudItem xs="12">
+												<MudText><span class="info-title">網頁連結:</span></MudText>
+												<MudLink Href="@ifUrl">@ifUrl</MudLink>
+											</MudItem>
+
+											@if (!string.IsNullOrWhiteSpace(description))
+											{
+												<MudItem xs="12">
+													<MudText>
+														<span class="info-title">描述:</span> <br /> @((MarkupString)description)
+													</MudText>
+												</MudItem>
+											}
+											<MudItem xs="12">
+
+												@if (comments != null && comments.Count > 0)
+												{
+													<MudText>
+														<span class="info-title">回覆 :</span>
+														<br />
+														<br />
+
+														@foreach (var cm in comments)
+														{
+															var author = cm?["author"];
+															var authorName = author?["name"];
+															var body = cm?["body"];
+															<text>@authorName:</text>
+															<br />
+															<br />
+															@(
+																(MarkupString)body?.ToString()?.ToHtmlString()
+																)
+														}
+													</MudText>
+												}
+											</MudItem>
+
+										</MudGrid>
+									</MudExpansionPanel>
+								}
+							}
+						}
+					</MudExpansionPanels>
+				</MudTabPanel>
+
+
+				<MudTabPanel Text="客製化查詢">
+					<MudGrid Justify="Justify.FlexStart">
+						<MudItem xs="12">
+							<MudButton Variant="Variant.Filled"
+									   Color="Color.Primary"
+									   Class="px-2"
+									   OnClick="()=>CopyToClipboard(CustomTasks)">複製異動單狀態</MudButton>
+						</MudItem>
+
+						<MudItem xs="12" Class="mt-auto">
+							<MudTextField Value="CustomUsername"
+										  ValueChanged="OnChangeCustomUserName"
+										  T="string"
+										  DebounceInterval="500"
+										  Label="查詢使用者"
+										  Disabled="@(SameAsUsername || AllBTeam)"
+										  Variant="Variant.Text"></MudTextField>
+							<MudGrid>
+								<MudItem>
+									<MudCheckBox T="bool"
+												 CheckedChanged="SameAsUsernameChanged"
+												 Checked="@SameAsUsername"
+												 Class="py-0"
+												 Size="Size.Small"
+												 Label="同上使用者"></MudCheckBox>
+								</MudItem>
+								<MudItem>
+									<MudCheckBox T="bool"
+												 CheckedChanged="AllBTeamChanged"
+												 Checked="@AllBTeam"
+												 Class="py-0"
+												 Size="Size.Small"
+												 Label="B組"></MudCheckBox>
+
+								</MudItem>
+							</MudGrid>
+						</MudItem>
+
+						<MudItem xs="12" Class="mt-auto">
+							<MudTextField @bind-Value="CustomQuery"
+										  T="string"
+										  DebounceInterval="500"
+										  Label="查詢條件 (預設未輸入條件為該使用者本周異動工作)"
+										  Variant="Variant.Text"></MudTextField>
+						</MudItem>
+
+						<MudItem xs="4" Class="mt-auto">
+							<MudButton Variant="Variant.Filled"
+									   Color="Color.Primary"
+									   Class="px-2"
+									   OnClick="OnSearchCustomTasks">查詢</MudButton>
+						</MudItem>
+
+						@if (CustomTasks != null)
+						{
+							<MudExpansionPanels>
+
+								@foreach (var issue in CustomTasks)
+								{
+									var erpId = issue.ToValue("key");
+									var id = $"customTasks_{erpId}";
+									var ifUrl = @$"http://172.20.10.106:5050/browse/{erpId}";
+									var fields = issue.ToJsonObject("fields");
+									var description = fields.ToValue("description")?.ToHtmlString();
+									var commentInfo = issue.ToJsonObject("commentInfo");
+									var comments = commentInfo["comments"]?.AsArray();
+									var creator = fields.ToJsonObject("creator");
+									var creatorName = creator.ToValue("displayName");
+									var createDate = (DateTime.Parse(fields.ToValue("created"))).ToString("yyyy-MM-dd HH:mm:ss");
+									var reporter = fields.ToJsonObject("reporter");
+									var reporterName = reporter.ToValue("displayName");
+									var status = fields.ToJsonObject("status");
+									var statusName = status.ToValue("name");
+									string statusAlias = GetStatusAlias(statusName?.ToString());
+									var summary = $"【{erpId}】 {fields.ToValue("summary")} {GetStatusAlias(statusName?.ToString())}";
+
+									<MudExpansionPanel Text="@summary" id="@id" @onclick="()=>OnExpendedClicked(id)">
+										<MudGrid Justify="Justify.FlexStart">
+											<MudItem xs="12">
+												<MudText><span class="info-title">單號:</span> @issue.ToValue("key")</MudText>
+											</MudItem>
+
+											<MudItem xs="12">
+												<MudText><span class="info-title">開單人員:</span> @reporterName</MudText>
+											</MudItem>
+
+
+											<MudItem xs="12">
+												<MudText><span class="info-title">開單時間:</span> @createDate</MudText>
+											</MudItem>
+
+											<MudItem xs="4" Class="mt-auto">
+												<MudText><span class="info-title">狀態:</span> @GetStatusAlias(statusName?.ToString())</MudText>
+											</MudItem>
+
+											<MudItem xs="4" Class="mt-auto">
+												<MudSelect T="string" Label=" 設定狀態" Variant="Variant.Filled" AnchorOrigin="Origin.BottomCenter" ValueChanged="OnChangedIssueStatus" Value="@CurrentIssueStatusLabel">
+													@foreach (JsonObject status in IssueStatusList)
+													{
+														<MudSelectItem Value="@status.ToValue("Label")" />
+													}
+												</MudSelect>
+											</MudItem>
+											<MudItem xs="4" Class="mt-auto">
+												<MudButton Variant="Variant.Filled"
+														   Color="Color.Primary"
+														   Class="px-2"
+														   OnClick="()=> SubmitIssueStatus(erpId)">改變狀態</MudButton>
+											</MudItem>
+
+
+											<MudItem xs="12">
+												<MudText><span class="info-title">網頁連結:</span></MudText>
+												<MudLink Href="@ifUrl">@ifUrl</MudLink>
+											</MudItem>
+
+											@if (!string.IsNullOrWhiteSpace(description))
+											{
+												<MudItem xs="12">
+													<MudText>
+														<span class="info-title">描述:</span> <br /> @(
+										(MarkupString)description
+										)
+													</MudText>
+												</MudItem>
+											}
+											<MudItem xs="12">
+
+												@if (comments != null && comments.Count > 0)
+												{
+													<MudText>
+														<span class="info-title">回覆 :</span>
+														<br />
+														<br />
+
+														@foreach (var cm in comments)
+														{
+															var author = cm?["author"];
+															var authorName = author?["name"];
+															var body = cm?["body"];
+															<text>@authorName:</text>
+															<br />
+															<br />
+															@(
+																(MarkupString)body?.ToString()?.ToHtmlString()
+																)
+														}
+													</MudText>
+												}
+											</MudItem>
+
+										</MudGrid>
+									</MudExpansionPanel>
+								}
+							</MudExpansionPanels>
+						}
+					</MudGrid>
+				</MudTabPanel>
+			</MudTabs>
+
+		</MudItem>
+	}
+
+</MudGrid>
+
+@code {
+	public string Username { get; set; }
+	public string Password { get; set; }
+
+	public SearchJiraTaskTimeOptions CurrentJiraTaskTimeOption { get; set; } = SearchJiraTaskTimeOptions.THIS_WEEK;
+
+	public DateTime? SearchStartDate { get; set; } = DateTime.Today;
+	public DateTime? SearchEndDate { get; set; } = DateTime.Today;
+	public bool SameAsUsername { get; set; }
+	public bool AllBTeam { get; set; }
+
+	public JsonArray Issues { get; set; }
+
+	public JsonArray WeekTasks { get; set; }
+
+	public string CustomUsername { get; set; }
+	public string CustomQuery { get; set; }
+
+	public JsonArray CustomTasks { get; set; }
+	/// <summary>
+	/// Config設定
+	/// </summary>
+	public JsonNode Config { get; set; }
+
+	bool isPasswordShow;
+	MudBlazor.InputType PasswordInput = MudBlazor.InputType.Password;
+	string PasswordInputIcon = Icons.Material.Filled.VisibilityOff;
+
+	/// <summary>
+	/// 單號狀態列表
+	/// </summary>
+	List<JsonObject> IssueStatusList { get; set; } = new List<JsonObject>()
+	{
+		new JsonObject(){ {"Label","待辦" }, {"Name","To Do" }, {"Value","11" } },
+		new JsonObject(){ {"Label","進行中" }, {"Name","In Progress" }, {"Value" ,"21"} },
+		new JsonObject(){ {"Label","完成" },{"Name", "Done" },{"Value","31"} },
+		new JsonObject(){ {"Label","測試中" },{"Name", "Testing" },{"Value","41"} }
+	};
+
+	/// <summary>
+	/// 目前單號狀態顯示
+	/// </summary>
+	private string CurrentIssueStatusLabel { get; set; }
+
+	/// <summary>
+	/// 目前單號狀態物件
+	/// </summary>
+	private JsonObject CurrentIssueStatusObj { get; set; }
+
+
+	protected override async Task OnInitializedAsync()
+	{
+		_configService.SetDefaultNavPath("/jira-task");
+		Config = _configService.GetConfig();
+		Username = Config.ToValue("JiraUserName");
+		Password = Config.ToValue("JiraPassword");
+		CustomUsername = Config.ToValue("JiraCustomUserName");
+
+		await GetTaskInfos();
+	}
+
+	public async Task OnChangeUserName(string username)
+	{
+		Username = username;
+		Config["JiraUserName"] = username;
+		_configService.UpdateConfig(Config);
+	}
+
+	public async Task OnChangePassword(string password)
+	{
+		Password = password;
+		Config["JiraPassword"] = password;
+		_configService.UpdateConfig(Config);
+	}
+
+	public async Task OnChangeCustomUserName(string username)
+	{
+		CustomTasks = new JsonArray();
+		CustomUsername = username;
+		Config["JiraCustomUserName"] = username;
+		_configService.UpdateConfig(Config);
+	}
+
+	public async Task OnChangeWeekUserName(string username)
+	{
+		WeekTasks = new JsonArray();
+		CustomUsername = username;
+		Config["JiraCustomUserName"] = username;
+		_configService.UpdateConfig(Config);
+
+		await GetTaskInfos();
+	}
+
+	public async Task OnSearchCustomTasks()
+	{
+		if (!string.IsNullOrWhiteSpace(CustomUsername))
+		{
+			var customList = await GetCustomTasksList();
+			CustomTasks = customList.ToJsonArray("issues");
+			StateHasChanged();
+		}
+	}
+
+	public async Task<JsonObject> GetCustomTasksList()
+	{
+		string query = @$"assignee = {CustomUsername} AND ((status =""Done"" OR status = ""Testing"" ) AND  updatedDate  >= startOfWeek() OR status = ""In Progress"")";
+		if (!string.IsNullOrWhiteSpace(CustomQuery))
+		{
+			query = @$"assignee = {CustomUsername} AND {CustomQuery}";
+		}
+		string searchUrl = $"search?jql={Uri.EscapeDataString(query)}";
+		return await CallJiraApi(searchUrl);
+
+	}
+
+	public async Task GetTaskInfos()
+	{
+		if (!string.IsNullOrWhiteSpace(Username) && !string.IsNullOrWhiteSpace(Password))
+		{
+			// Jira API的基本URL
+			var toDoList = await GetToDoList();
+			Issues = toDoList.ToJsonArray("issues");
+			var weekList = await GetWeekTasksList();
+			WeekTasks = weekList.ToJsonArray("issues");
+
+			@if (Issues != null)
+			{
+				@foreach (var issue in Issues)
+				{
+					issue["commentInfo"] = await GetCommentList(issue.ToValue("key"));
+				}
+			}
+			StateHasChanged();
+		}
+	}
+
+
+	public async Task<JsonObject> GetCommentList(string issueKey)
+	{
+		var query = $"issue/{issueKey}/comment";
+		var result = await CallJiraApi(query);
+		return result;
+	}
+
+
+
+	public async Task<JsonObject> GetToDoList()
+	{
+		//	// 构建JQL查询字符串
+		string jqlQuery = @$"assignee = {Username} AND (status =""To Do"" OR status = ""In Progress"")";
+
+		//	// 构建完整的API请求URL
+		string searchUrl = $"search?jql={Uri.EscapeDataString(jqlQuery)}";
+		return await CallJiraApi(searchUrl);
+	}
+
+	public async Task CurrentJiraTaskTimeOptionChange(SearchJiraTaskTimeOptions option)
+	{
+		CurrentJiraTaskTimeOption = option;
+
+		if (CurrentJiraTaskTimeOption != SearchJiraTaskTimeOptions.OTHERS)
+		{
+			await GetTaskInfos();
+		}
+		else
+		{
+			WeekTasks = null;
+			StateHasChanged();
+		}
+	}
+
+	public async Task<JsonObject> GetWeekTasksList()
+	{
+		var timeCondition = "";
+		var today = DateTime.Today;
+		var thisMonthFirstDate = new DateTime(today.Year, today.Month, 1);
+
+		switch (CurrentJiraTaskTimeOption)
+		{
+			case SearchJiraTaskTimeOptions.THIS_WEEK:
+				timeCondition = "updatedDate  >= startOfWeek()";
+				break;
+			case SearchJiraTaskTimeOptions.LAST_WEEK:
+				var thisWeekMonday = today.AddDays(-(int)today.DayOfWeek + (int)DayOfWeek.Monday);
+				var lastWeekMonday = thisWeekMonday.AddDays(-7);
+				timeCondition = $"updatedDate >= \"{lastWeekMonday.ToString("yyyy/MM/dd")}\" AND updatedDate < \"{thisWeekMonday.ToString("yyyy/MM/dd")}\"";
+				break;
+			case SearchJiraTaskTimeOptions.THIS_MONTH:
+				// 下個月第一天
+				var nextMonthFirstDate = thisMonthFirstDate.AddMonths(1);
+				// 本月最後一天
+				var thisMonthLastDate = nextMonthFirstDate.AddDays(-1);
+				timeCondition = $"updatedDate >= \"{thisMonthFirstDate.ToString("yyyy/MM/dd")}\" AND updatedDate < \"{thisMonthLastDate.ToString("yyyy/MM/dd")}\"";
+				break;
+			case SearchJiraTaskTimeOptions.LAST_MONTH:
+				// 上個月最後一天
+				var lastMonthLastDate = thisMonthFirstDate.AddDays(-1);
+				// 上個月第一天
+				var lastMonthFirstDate = new DateTime(lastMonthLastDate.Year, lastMonthLastDate.Month, 1);
+				timeCondition = $"updatedDate >= \"{lastMonthFirstDate.ToString("yyyy/MM/dd")}\" AND updatedDate < \"{lastMonthLastDate.ToString("yyyy/MM/dd")}\"";
+				break;
+			case SearchJiraTaskTimeOptions.OTHERS:
+				if (!SearchStartDate.HasValue || !SearchEndDate.HasValue)
+				{
+					await _dialogService.ShowMessageBox("錯誤", "請輸入查詢日期");
+					return null;
+				}
+
+				timeCondition = $"updatedDate >= \"{SearchStartDate.Value.ToString("yyyy/MM/dd")}\" AND updatedDate <= \"{SearchEndDate.Value.ToString("yyyy/MM/dd")}\"";
+				break;
+			default:
+				timeCondition = "updatedDate  >= startOfWeek()";
+				break;
+
+		}
+
+		var queryUserName = string.IsNullOrWhiteSpace(CustomUsername) ? Username : CustomUsername;
+		queryUserName = queryUserName.Trim().Trim(',');
+		var usernameList = queryUserName.Split(",");
+		var assigneeQueryCondition = usernameList.Length > 0 ? $"assignee in ({queryUserName})" : $"assignee = {queryUserName}";
+
+		string query = @$"{assigneeQueryCondition} AND ((status =""Done"" OR status = ""Testing"" ) AND {timeCondition}  OR status = ""In Progress"")";
+
+		//string query = @$"assignee = {Username} AND (status =""Done"" OR status = ""Testing"" OR status = ""In Progress"") AND  updatedDate  >= startOfWeek()";
+		string searchUrl = $"search?jql={Uri.EscapeDataString(query)}";
+		return await CallJiraApi(searchUrl);
+	}
+
+
+	//public async Task GetIssueStatus(string issueKey)
+	//{
+	//	string url = $"issue/{issueKey}/transitions";
+	//	var result = await CallJiraApi(url);
+	//	var statusList = result.ToDictionary(r => r.Key, r => r.Value);
+
+	//}
+
+	public async Task SubmitIssueStatus(string issueKey)
+	{
+		var statusId = CurrentIssueStatusObj.ToValue("Value");
+		if (!string.IsNullOrWhiteSpace(statusId))
+		{
+			var parameters = new DialogParameters();
+			parameters.Add("ContentText", $@"確定改變單號:{issueKey}的狀態嗎?");
+			var options = new DialogOptions { CloseOnEscapeKey = true };
+			var dialog = await _dialogService.Show<BasicDialog>("訊息", parameters, options).Result;
+
+			if (!dialog.Canceled)
+			{
+
+				string url = $"issue/{issueKey}/transitions";
+				await CallJiraApi(url, new { transition = new { id = statusId } });
+				await GetTaskInfos();
+			}
+		}
+		else
+		{
+			await _dialogService.ShowMessageBox("訊息", "請選擇狀態");
+		}
+	}
+
+	private void OnChangedIssueStatus(object value)
+	{
+		var status = IssueStatusList.FirstOrDefault(i => i.ToValue("Label") == value?.ToString());
+		if (status != null)
+		{
+			CurrentIssueStatusLabel = value?.ToString();
+			CurrentIssueStatusObj = status;
+		}
+	}
+
+
+	public async Task<JsonObject> CallJiraApi(string query, object content = null)
+	{
+		string baseUri = "http://172.20.10.106:5050/rest/api/2/";
+		using (var client = new HttpClient())
+		{
+			// 设置基本URL
+			client.BaseAddress = new Uri(baseUri);
+
+			// 设置认证头部
+			var byteArray = System.Text.Encoding.ASCII.GetBytes($"{Username}:{Password}");
+			client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", Convert.ToBase64String(byteArray));
+
+			HttpResponseMessage response;
+			if (content == null)
+			{
+				response = await client.GetAsync(query);
+			}
+			else
+			{
+
+				var data = new StringContent(Newtonsoft.Json.JsonConvert.SerializeObject(content), Encoding.UTF8, "application/json");
+				response = await client.PostAsync(query, data);
+			}
+
+			// 检查响应状态码
+			if (response.IsSuccessStatusCode)
+			{
+				// 读取响应内容并解析JSON
+				string jsonResponse = await response.Content.ReadAsStringAsync();
+				// 在此处处理JSON响应，根据您的需求进行解析
+				//Console.WriteLine(jsonResponse);
+				if (!string.IsNullOrWhiteSpace(jsonResponse))
+				{
+					var result = JsonSerializer.Deserialize<JsonObject>(jsonResponse);
+					return result;
+				}
+				return new JsonObject();
+			}
+			else
+			{
+				await _dialogService.ShowMessageBox("錯誤", response.ToString());
+				return null;
+			}
+		}
+
+	}
+
+
+
+	public string FormatDescription(string description)
+	{
+		var htmlDesc = description?.ToHtmlString();
+		return htmlDesc;
+	}
+
+	public void ButtonTestclick()
+	{
+		@if (isPasswordShow)
+		{
+			isPasswordShow = false;
+			PasswordInputIcon = Icons.Material.Filled.VisibilityOff;
+			PasswordInput = MudBlazor.InputType.Password;
+		}
+		else
+		{
+			isPasswordShow = true;
+			PasswordInputIcon = Icons.Material.Filled.Visibility;
+			PasswordInput = MudBlazor.InputType.Text;
+		}
+	}
+
+	public async Task SameAsUsernameChanged(bool value)
+	{
+		SameAsUsername = value;
+		if (SameAsUsername)
+		{
+			AllBTeam = !SameAsUsername;
+			CustomUsername = Username;
+		}
+		else
+		{
+			CustomUsername = Config.ToValue("JiraCustomUserName");
+		}
+
+		await GetTaskInfos();
+	}
+
+	public async Task AllBTeamChanged(bool value)
+	{
+		AllBTeam = value;
+		if (AllBTeam)
+		{
+			SameAsUsername = !AllBTeam;
+			CustomUsername = "Nick_Huang, Max_Chiue, Martin_Wang";
+		}
+		else
+		{
+			CustomUsername = Config.ToValue("JiraCustomUserName");
+		}
+
+		await GetTaskInfos();
+	}
+
+
+	/// <summary>
+	/// 複製到剪貼簿
+	/// </summary>
+	/// <returns></returns>
+	public async Task CopyToClipboard(JsonArray tasks)
+	{
+		StringBuilder taskListBuilder = new StringBuilder();
+		if (tasks != null)
+		{
+
+			var weekTaskDic = WeekTasks.GroupBy(iss => iss["fields"]["assignee"].ToValue("name"))
+			.ToDictionary(r => r.Key, r => r.Select(s => s));
+
+			foreach (var name in weekTaskDic.Keys)
+			{
+				taskListBuilder.AppendLine(name);
+				foreach (var issue in weekTaskDic[name].OrderBy(w => w.ToJsonObject("fields").ToJsonObject("status").ToValue("name")))
+				{
+					var erpId = issue.ToValue("key");
+					var ifUrl = @$"http://172.20.10.106:5050/browse/{erpId}";
+					var fields = issue.ToJsonObject("fields");
+					var description = fields.ToValue("description")?.ToHtmlString();
+					var commentInfo = issue.ToJsonObject("commentInfo");
+					var comments = commentInfo["comments"]?.AsArray();
+					var creator = fields.ToJsonObject("creator");
+					var creatorName = creator.ToValue("displayName");
+					var createDate = (DateTime.Parse(fields.ToValue("created"))).ToString("yyyy-MM-dd HH:mm:ss");
+					var reporter = fields.ToJsonObject("reporter");
+					var reporterName = reporter.ToValue("displayName");
+					var status = fields.ToJsonObject("status");
+					var statusName = status.ToValue("name");
+					string statusAlias = GetStatusAlias(statusName?.ToString());
+
+					var summary = $"{erpId}  {statusAlias}  {fields.ToValue("summary")} ";
+
+					taskListBuilder.AppendLine($"{summary} ");
+				}
+				taskListBuilder.AppendLine();
+			}
+		}
+		Clipboard.SetText(taskListBuilder.ToString());
+		await _dialogService.ShowMessageBox("訊息", "複製成功");
+	}
+
+
+	/// <summary>
+	/// 點擊ExpendedPanel的時候將scrollbar移動到位置
+	/// </summary>
+	/// <param name="template"></param>
+	async void OnExpendedClicked(string id)
+	{
+		await Task.Delay(1000).ContinueWith(result =>
+		{
+			if (result.IsCompleted)
+			{
+				JsRuntime.InvokeVoidAsync("scrollToElementId", id);
+			}
+		});
+
+	}
+
+	public string GetStatusAlias(string status)
+	{
+		switch (status)
+		{
+			case "To Do":
+				return "待辦";
+			case "Done":
+				return "完成";
+			case "Testing":
+				return "測試中";
+			case "In Progress":
+				return "進行中";
+		}
+		return "";
+	}
+
+}

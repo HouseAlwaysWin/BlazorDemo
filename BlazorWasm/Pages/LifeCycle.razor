@@ -1,0 +1,68 @@
+﻿<h3>@Title</h3>
+<h3>@CascadingObject.Title</h3>
+<h3>@CascadingObject2.Title</h3>
+
+@if (LifeCycleList.Count > 0)
+{
+	@foreach (var item in LifeCycleList)
+	{
+		<h4>@item</h4>
+	}
+}
+
+@code {
+	[Parameter]
+	public string Title { get; set; }
+
+	[CascadingParameter(Name = "Object1")]
+	public CascadingObject CascadingObject { get; set; }
+
+	[CascadingParameter(Name = "Object2")]
+	public CascadingObject CascadingObject2 { get; set; }
+
+	public bool SetParam = false;
+	public bool OnInit = false;
+	public bool OnParameter = false;
+	public bool OnAfterRender = false;
+	public List<string> LifeCycleList = new List<string>();
+
+	public override async Task SetParametersAsync(ParameterView parameters)
+	{
+		var p = string.Empty;
+		parameters.TryGetValue("Title", out p);
+
+		LifeCycleList.Add("SetParametersAsync");
+		await base.SetParametersAsync(parameters);
+	}
+
+	protected override async Task OnInitializedAsync()
+	{
+		LifeCycleList.Add("OnInitializedAsync");
+		await base.OnInitializedAsync();
+	}
+
+	protected override async Task OnParametersSetAsync()
+	{
+		LifeCycleList.Add("OnParametersSetAsync");
+		await base.OnParametersSetAsync();
+
+	}
+
+	protected override async Task OnAfterRenderAsync(bool firstRender)
+	{
+		if (firstRender)
+		{
+			LifeCycleList.Add("第一次 OnAfterRenderAsync");
+			StateHasChanged();
+		}
+		else
+		{
+			await Task.Delay(1000);
+			LifeCycleList.Add("非第一次 OnAfterRenderAsync");
+			StateHasChanged();
+		}
+		await base.OnAfterRenderAsync(firstRender);
+	}
+
+
+}

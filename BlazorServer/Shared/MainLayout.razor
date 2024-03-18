@@ -1,19 +1,27 @@
 ﻿@inherits LayoutComponentBase
 
-<PageTitle>BlazorServer</PageTitle>
-
 <div class="page">
-    <div class="sidebar">
-        <NavMenu />
-    </div>
+	<div class="sidebar">
+		<NavMenu />
+	</div>
 
-    <main>
-        <div class="top-row px-4">
-            <a href="https://docs.microsoft.com/aspnet/" target="_blank">About</a>
-        </div>
+	<main>
+		<div class="top-row px-4">
+			<a href="https://docs.microsoft.com/aspnet/" target="_blank">About</a>
+		</div>
 
-        <article class="content px-4">
-            @Body
-        </article>
-    </main>
+		<CascadingValue Value="CascadingTitle" TValue="CascadingObject" Name="Object1">
+			<CascadingValue Value="CascadingTitle2" TValue="CascadingObject" Name="Object2">
+				<article class="content px-4">
+					@Body
+				</article>
+			</CascadingValue>
+		</CascadingValue>
+
+	</main>
 </div>
+
+@code {
+	private CascadingObject CascadingTitle = new CascadingObject { Title = "LifeCycle 參數(從[CascadingParameter]取得)" };
+	private CascadingObject CascadingTitle2 = new CascadingObject { Title = "LifeCycle 參數(從[CascadingParameter]取得2)" };
+}

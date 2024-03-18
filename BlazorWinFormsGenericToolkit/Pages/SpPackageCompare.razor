@@ -1,0 +1,400 @@
+﻿@page "/"
+@using System.Text.Json.Nodes;
+@using BlazorWinFormsGenericToolKit.Repositories;
+@using Polly;
+@using Polly.CircuitBreaker;
+@inject IFolderPicker _folderPicker
+@inject IConfigServices _configService
+@inject IDialogService _dialogService
+
+<MudGrid Justify="Justify.FlexStart">
+
+	<MudItem xs="9">
+		<MudTextField @bind-Value="ProjectPath"
+					  Label="專案路徑位置"
+					  ReadOnly="true"
+					  Variant="Variant.Text"></MudTextField>
+	</MudItem>
+
+	<MudItem xs="3" Class="mt-auto">
+		<MudButton Variant="Variant.Filled"
+				   Color="Color.Primary"
+				   Class="px-2"
+				   OnClick="SetProjectPath">設定路徑</MudButton>
+	</MudItem>
+
+	<MudItem xs="12">
+		<MudRadioGroup T="DbSetting" SelectedOption="SelectedDbSetting" SelectedOptionChanged="OnSelectedDbSetting">
+			@foreach (var DbInfo in DbSettingHelper.DbMap)
+			{
+				if (DbInfo.Key != "VG")
+				{
+					<MudRadio Option="DbInfo.Value" Color="Color.Primary" Dense="true" Size="Size.Medium">@DbInfo.Key</MudRadio>
+				}
+			}
+		</MudRadioGroup>
+	</MudItem>
+
+	<MudItem xs="9" Class="mt-auto">
+		<MudAutocomplete T="string"
+						 Label="選擇程式"
+						 Disabled="@DisableSelectedPackage"
+						 Value="@SelectedPackageName"
+						 ValueChanged="OnChangeSelectedPackage"
+						 SearchFunc="@OnSelectedPackage"
+						 DebounceInterval="800"
+						 ResetValueOnEmptyText="true"
+						 CoerceText="true"
+						 CoerceValue="true"
+						 AdornmentColor="Color.Primary" />
+	</MudItem>
+
+
+
+	<MudItem xs="3" Class="mt-auto">
+		<MudButton Variant="Variant.Filled"
+				   Color="Color.Primary"
+				   Disabled="@DisableSearchPackageButton"
+				   OnClick="@OnSearchPackage">搜尋</MudButton>
+	</MudItem>
+
+	@if (IsLoading)
+	{
+		<MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-7" />
+	}
+
+	@if (PackageInfo != null)
+	{
+		<MudItem xs="12">
+			<MudButtonGroup Color="Color.Dark"
+							Variant="Variant.Filled">
+				@if (SelectedDbSetting.FactoryCode == "VN")
+				{
+					<MudButton OnClick="SyncToVG">同步到VG</MudButton>
+				}
+				<MudButton OnClick="ExportPackage">輸出Package</MudButton>
+			</MudButtonGroup>
+		</MudItem>
+
+		<MudItem xs="6">
+			<MudText>專案 </MudText>
+			<MudPaper Class="mud-theme-dark overflow-auto text-break">
+				<MudContainer Style="height: 500px;  color: ghostwhite">
+					@((MarkupString)PackageInfo.Code.ToHtmlString())
+				</MudContainer>
+			</MudPaper>
+		</MudItem>
+
+		<MudItem xs="6">
+			<MudText>資料庫</MudText>
+			<MudPaper Class="mud-theme-dark overflow-auto text-break">
+				<MudContainer Style="height: 500px;  color: ghostwhite">
+					@((MarkupString)PackageInfo.Oracle.ToHtmlString())
+				</MudContainer>
+			</MudPaper>
+		</MudItem>
+	}
+
+</MudGrid>
+
+@code {
+
+	/// <summary>
+	/// 是否讀取中
+	/// </summary>
+	public bool IsLoading { get; set; } = false;
+	/// <summary>
+	/// 目前查詢到的Package資訊
+	/// </summary>
+	PackageCompareModel PackageInfo { get; set; }
+
+	/// <summary>
+	/// Config設定
+	/// </summary>
+	JsonNode Config { get; set; }
+
+	protected override async Task OnInitializedAsync()
+	{
+
+		_configService.SetDefaultNavPath("/");
+		Config = _configService.GetConfig();
+		ProjectPath = Config.ToValue("ProjectPath");
+		SelectedDbSetting = DbSettingHelper.DbMap["TC"];
+		this.OnSelectedDbSetting(SelectedDbSetting);
+
+	}
+
+	#region 設定專案路徑
+	/// <summary>
+	/// 專案路徑
+	/// </summary>
+	string ProjectPath { get; set; } = "";
+
+	public async void SetProjectPath()
+	{
+		try
+		{
+			var pickupPath = _folderPicker.PickFolder();
+			if (Directory.Exists(pickupPath))
+			{
+				ProjectPath = pickupPath;
+				Config.AsObject()["ProjectPath"] = ProjectPath;
+				_configService.UpdateConfig(Config);
+			}
+		}
+		catch (DirectoryNotFoundException ex)
+		{
+			await _dialogService.ShowMessageBox("訊息", "找不到該路徑");
+		}
+		catch (Exception ex)
+		{
+			await _dialogService.ShowMessageBox("錯誤訊息", ex.ToString());
+		}
+	}
+	#endregion 設定專案路徑
+
+	#region DB RadioButton 選擇
+	private PackagesRepository _packagesRepository { get; set; }
+	public DbSetting SelectedDbSetting { get; set; }
+	public List<string> PackageNames { get; set; } = new List<string>();
+
+	public async Task OnSelectedDbSetting(DbSetting value)
+	{
+
+		SelectedDbSetting = value;
+		try
+		{
+			await Task.Run(() =>
+			{
+				_packagesRepository = new PackagesRepository(value);
+				//Action<Exception, TimeSpan> onBreak = async (exception, timespan) =>
+				//{
+				//	await _dialogService.ShowMessageBox("錯誤訊息", exception.ToString());
+				//};
+
+				//Action onReset = () =>
+				//{
+
+				//};
+
+				//CircuitBreakerPolicy breaker = Policy
+				//	.Handle<Exception>()
+				//	.CircuitBreaker(2, TimeSpan.FromSeconds(20), onBreak, onReset);
+				//breaker.Execute(() =>
+				//{
+				PackageNames = _packagesRepository.GetAllPackageNames();
+				//});
+
+				if (PackageNames.Count > 0)
+				{
+					DisableSelectedPackage = false;
+					PackageInfo = null;
+				}
+			});
+		}
+		catch (Exception ex)
+		{
+			await _dialogService.ShowMessageBox("錯誤訊息", ex.ToString());
+		}
+
+	}
+	#endregion DB RadioButton 選擇
+
+	#region Package搜尋
+	/// <summary>
+	/// Package名稱輸入
+	/// </summary>
+	string SelectedPackageName { get; set; } = "";
+
+
+	/// <summary>
+	/// 開關Package查詢
+	/// </summary>
+	bool DisableSelectedPackage { get; set; } = true;
+
+	bool DisableSearchPackageButton { get; set; } = true;
+
+	/// <summary>
+	/// Package程式選擇輸入
+	/// </summary>
+	/// <param name="value"></param>
+	public async Task OnChangeSelectedPackage(string value)
+	{
+		if (!string.IsNullOrWhiteSpace(value))
+		{
+			SelectedPackageName = value;
+			DisableSearchPackageButton = false;
+		}
+	}
+
+	/// <summary>
+	/// 查詢資料夾內的Package檔案
+	/// </summary>
+	/// <param name="PackageName"></param>
+	/// <returns></returns>
+	private async Task<IEnumerable<string>> OnSelectedPackage(string programName)
+	{
+
+		return await Task.Run(() =>
+		{
+			if (!string.IsNullOrWhiteSpace(programName))
+			{
+				if (PackageNames.Count > 0)
+				{
+					return PackageNames.Where(p => p.Contains(programName)).ToList();
+				}
+			}
+			return new List<string>();
+		});
+	}
+
+
+	public async Task OnSearchPackage()
+	{
+		if (!string.IsNullOrWhiteSpace(SelectedPackageName))
+		{
+
+			List<string> head = new List<string>();
+			List<string> body = new List<string>();
+			_packagesRepository = new PackagesRepository(SelectedDbSetting);
+
+			IsLoading = true;
+			await Task.Run(() =>
+			{
+				var head = _packagesRepository.GetPackageHead(SelectedPackageName);
+				var body = _packagesRepository.GetPackageBody(SelectedPackageName);
+				return (head, body);
+			}).ContinueWith((res) =>
+			{
+				head = res.Result.head;
+				body = res.Result.body;
+				IsLoading = false;
+			});
+
+
+			if (!string.IsNullOrWhiteSpace(ProjectPath))
+			{
+				var packageNameInfo = SelectedPackageName.Split("_");
+				var moduleName = packageNameInfo[1];
+				var packageName = packageNameInfo[2];
+
+				var filePath = @$"{ProjectPath}\DLP.SQL\{SelectedDbSetting.FactoryCode}\DDL\{moduleName.ToUpper()}\{SelectedPackageName}.sql";
+
+				if (!File.Exists(filePath))
+				{
+					await _dialogService.ShowMessageBox("訊息", $"找不到該路徑 {filePath}");
+					IsLoading = false;
+					return;
+				}
+
+				if (!head.Any() && !body.Any())
+				{
+					await _dialogService.ShowMessageBox("訊息", $"Package不存在");
+					IsLoading = false;
+					return;
+				}
+
+
+				PackageInfo = await Task.Run(() =>
+				{
+					var text = File.ReadAllText(filePath);
+					text = text.Replace("\r\n", "\n");
+
+					head[0] = "CREATE OR REPLACE " + head[0];
+					body[0] = "CREATE OR REPLACE " + body[0];
+					List<string> seperator = new List<string> { "\n\n", "/", "\n\n" };
+					var combine = new PackageCompareModel
+						{
+							Oracle = string.Join("", head.Concat(seperator).Concat(body)),
+							Code = text,
+							OracleHead = String.Join("", head),
+							OracleBody = String.Join("", body)
+						};
+					return combine;
+				}).ContinueWith((packageInfo) =>
+				{
+					IsLoading = false;
+					return packageInfo.Result;
+				});
+
+
+				if (PackageInfo.Code.Equals(PackageInfo.Oracle, StringComparison.OrdinalIgnoreCase))
+				{
+					await _dialogService.ShowMessageBox("訊息", $"完全一樣(忽略大小寫)");
+				}
+
+				//foreach (var item in packageInfo)
+				//{
+				//	if (item.Code.Equals(item.Oracle, StringComparison.OrdinalIgnoreCase))
+				//	{
+				//		await _dialogService.ShowMessageBox("訊息", $"完全一樣(忽略大小寫)");
+				//	}
+				//}
+			}
+			else
+			{
+				await _dialogService.ShowMessageBox("訊息", $"專案路徑不能為空");
+			}
+		}
+	}
+	#endregion Package搜尋
+
+	#region 輸出和同步
+
+	/// <summary>
+	/// 輸出到專案
+	/// </summary>
+	private async void ExportPackage()
+	{
+		var packageNameInfo = SelectedPackageName.Split("_");
+		var moduleName = packageNameInfo[1];
+		var packageName = packageNameInfo[2];
+
+		var filePath = @$"{ProjectPath}\DLP.SQL\{SelectedDbSetting.FactoryCode}\DDL\{moduleName.ToUpper()}\{SelectedPackageName}.sql";
+		if (PackageInfo == null || string.IsNullOrWhiteSpace(PackageInfo.Oracle))
+		{
+			await _dialogService.ShowMessageBox("訊息", "Package內容為空");
+			return;
+		}
+		File.WriteAllText(filePath, PackageInfo.Oracle);
+		await _dialogService.ShowMessageBox("訊息", "成功輸出檔案");
+	}
+
+	/// <summary>
+	/// 同步到VG
+	/// </summary>
+	private async void SyncToVG()
+	{
+		_packagesRepository = new PackagesRepository(DbSettingHelper.DbMap["VG"]);
+
+		if (PackageInfo != null)
+		{
+			var content = PackageInfo;
+			try
+			{
+				var errorMessage = _packagesRepository.UpdatePackage(content.OracleHead, content.OracleBody);
+				if (!string.IsNullOrWhiteSpace(errorMessage))
+				{
+					await _dialogService.ShowMessageBox("訊息", $"同步失敗: {errorMessage}");
+					return;
+				}
+
+				var dbaErrors = _packagesRepository.GetDbaErrors(SelectedPackageName);
+				if (dbaErrors.Any())
+				{
+					await _dialogService.ShowMessageBox("訊息", $"同步失敗, {dbaErrors.FirstOrDefault()?.TEXT}");
+				}
+				else
+				{
+					await _dialogService.ShowMessageBox("訊息", "同步完畢");
+				}
+			}
+			catch (Exception e)
+			{
+				await _dialogService.ShowMessageBox("訊息", $"同步失敗, {e.Message}");
+			}
+		}
+	}
+	#endregion 輸出和同步
+
+}

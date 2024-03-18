@@ -1,0 +1,327 @@
+﻿@page "/command-runner"
+@using System.Text.Json.Nodes;
+@using System.Text.Json;
+@using CliWrap;
+@using CliWrap.Buffered;
+@using CliWrap.EventStream;
+@using System.Text;
+@using System.Reactive.Linq;
+@using System.Reactive.Subjects;
+@using Microsoft.AspNetCore.SignalR;
+@using System.Diagnostics;
+@inject IFolderPicker _folderPicker
+@inject IConfigServices _configService
+@inject IDialogService _dialogService
+@inject CommandService _commandService;
+@inject NavigationManager NavigationManager;
+@inject DataTransferService<CommandGroup> _dataTransferService;
+
+<MudGrid Justify="Justify.FlexStart" Spacing="2">
+
+	<MudItem Class="mt-auto">
+		<MudButton Color="Color.Info" Variant="Variant.Filled" Size="Size.Medium" OnClick="AddNewCommand">新增指令</MudButton>
+	</MudItem>
+
+	<MudItem Class="mt-auto">
+		<MudButton Color="Color.Tertiary" Variant="Variant.Filled" Size="Size.Medium" OnClick="GoAllProcessLIst">網路主機列表</MudButton>
+	</MudItem>
+
+	<MudItem Class="mt-auto">
+		<MudButton Color="Color.Error" Variant="Variant.Filled" Size="Size.Medium" OnClick="CloseAllProcess">關閉所有Process</MudButton>
+	</MudItem>
+
+	<MudItem xs="12" Class="mt-auto">
+
+		<MudTable T="CommandGroup"
+				  Items="@CommandGroups"
+				  GroupBy="@_groupDefinition"
+				  CanCancelEdit="false"
+				  Dense="@_dense"
+				  Hover="@hover"
+				  OnCommitEditClick="OnEditCommand"
+				  RowEditPreview="BackupItem"
+				  RowEditCancel="ResetItemToOriginalValues"
+				  ReadOnly="@GroupReadOnly"
+				  IsEditRowSwitchingBlocked="@blockSwitch"
+				  ApplyButtonPosition="@TableApplyButtonPosition.End"
+				  EditButtonPosition="@TableEditButtonPosition.End"
+				  EditTrigger="@TableEditTrigger.EditButton">
+			<HeaderContent>
+				<MudTh>指令名稱</MudTh>
+				<MudTh>指令細項</MudTh>
+				<MudTh>Port</MudTh>
+				<MudTh>狀態</MudTh>
+				<MudTh>執行</MudTh>
+				<MudTh>關閉</MudTh>
+				<MudTh>刪除</MudTh>
+			</HeaderContent>
+			<GroupHeaderTemplate>
+				<MudTh Class="mud-table-cell-custom-group mud-theme-primary" colspan="5">
+					@($"{context.Key}")
+				</MudTh>
+				<MudTh Class="mud-table-cell-custom-group" colspan="1">
+					<MudButton Color="Color.Error" Variant="Variant.Filled" Disabled="@(!context.Items.Any(i => i.IsRunning))" Size="Size.Small" OnClick="@(e => CloseCommandGroupList(context.Items.ToList()))">關閉指令</MudButton>
+				</MudTh>
+
+				<MudTh Class="mud-table-cell-custom-group" colspan="1">
+					<MudButton Color="Color.Error" Variant="Variant.Filled" Size="Size.Small" OnClick="@(e => DeleteCommandGroup(context))">刪除</MudButton>
+				</MudTh>
+			</GroupHeaderTemplate>
+			<RowTemplate>
+				<MudTd>@context.CommandName</MudTd>
+				<MudTd>
+					<MudButton Color="Color.Secondary" Variant="Variant.Outlined" Size="Size.Small" OnClick="@(e => GoDetail(context))">內容</MudButton>
+				</MudTd>
+				<MudTd>
+					@foreach (var cmd in context.CommandList)
+					{
+						<text>@(cmd.Port),</text>
+					}
+				</MudTd>
+				<MudTd>
+					@if (context.IsRunning)
+					{
+						<MudProgressCircular Color="Color.Info" Indeterminate="true" />
+					}
+					else
+					{
+						<MudText>尚未執行</MudText>
+					}
+				</MudTd>
+
+				<MudTd>
+					<MudButton Color="Color.Success" Variant="Variant.Filled" Size="Size.Small" Disabled="context.IsRunning" OnClick="(e => RunAllCommand(context))">執行指令</MudButton>
+				</MudTd>
+
+				<MudTd>
+					<MudButton Color="Color.Error" Variant="Variant.Filled" Size="Size.Small" Disabled="!context.IsRunning" OnClick="(e => CloseCommandGroup(context))">關閉指令</MudButton>
+				</MudTd>
+
+				<MudTd>
+					<MudButton Color="Color.Error" Variant="Variant.Filled" Size="Size.Small" OnClick="@(e => DeleteCommand(context))">刪除</MudButton>
+				</MudTd>
+			</RowTemplate>
+			<RowEditingTemplate>
+				<MudTd DataLabel="Sign">
+					<MudTextField @bind-Value="@context.CommandName" Required />
+				</MudTd>
+			</RowEditingTemplate>
+
+		</MudTable>
+
+	</MudItem>
+</MudGrid>
+
+@code {
+	private string NewGroupName;
+	private List<string> NewCommandLine { get; set; } = new List<string>();
+
+	private MudTable<CommandGroup> _tableRef;
+
+	private bool _dense = false;
+	private bool _multiSelect = true;
+	private bool _virtualize = false;
+	private bool hover = true;
+	private bool GroupReadOnly = false;
+	private bool canCancelEdit = false;
+	private bool blockSwitch = false;
+	private TableEditTrigger editTrigger = TableEditTrigger.RowClick;
+	private TableGroupDefinition<CommandGroup> _groupDefinition = new()
+		{
+			GroupName = "群組名稱",
+			Indentation = false,
+			Expandable = true,
+			IsInitiallyExpanded = true,
+			Selector = (e) => e.GroupName
+		};
+	private List<CommandGroup> CommandGroups = new List<CommandGroup>();
+	private CommandGroup CurrentCommandGroup = new CommandGroup();
+
+	public StringBuilder OutputLogs { get; set; } = new StringBuilder();
+
+	private void BackupItem(object element)
+	{
+	}
+	private void ResetItemToOriginalValues(object element)
+	{
+		//((Element)element).Sign = elementBeforeEdit.Sign;
+		//((Element)element).Name = elementBeforeEdit.Name;
+		//((Element)element).Molar = elementBeforeEdit.Molar;
+		//((Element)element).Position = elementBeforeEdit.Position;
+		//AddEditionEvent($"RowEditCancel event: Editing of Element {((Element)element).Name} canceled");
+	}
+
+
+	/// <summary>
+	/// Config設定
+	/// </summary>
+	JsonNode Config { get; set; }
+
+	protected override async Task OnInitializedAsync()
+	{
+		await _commandService.GetSubProcessPID();
+
+		_configService.SetDefaultNavPath("/command-runner");
+		//Config = _configService.GetConfig();
+		//ProjectPath = Config.ToValue("ProjectPath");
+
+		//CommandGroups = CommandData.CommandGroups;
+		CommandGroups = await _commandService.GetAllCommandGroups();
+	}
+
+	//#region 設定專案路徑
+	///// <summary>
+	///// 專案路徑
+	///// </summary>
+	//string ProjectPath { get; set; } = "";
+
+	//public async void SetProjectPath()
+	//{
+	//	try
+	//	{
+	//		var pickupPath = _folderPicker.PickFolder();
+	//		if (Directory.Exists(pickupPath))
+	//		{
+	//			ProjectPath = pickupPath;
+	//			Config.AsObject()["ProjectPath"] = ProjectPath;
+	//			_configService.UpdateConfig(Config);
+	//		}
+	//	}
+	//	catch (DirectoryNotFoundException ex)
+	//	{
+	//		await _dialogService.ShowMessageBox("訊息", "找不到該路徑");
+	//	}
+	//	catch (Exception ex)
+	//	{
+	//		await _dialogService.ShowMessageBox("錯誤訊息", ex.ToString());
+	//	}
+	//}
+	//#endregion 設定專案路徑
+
+	public async Task RunAllCommand(CommandGroup item)
+	{
+		CurrentCommandGroup = item;
+		var tasks = new List<Task>();
+		foreach (var cmd in item.CommandList)
+		{
+			cmd.OutputLogs.Clear();
+			tasks.Add(ExecuteCmd(cmd));
+		}
+		await Task.WhenAny(tasks);
+
+	}
+
+	public async Task ExecuteCmd(CommandItem cmd)
+	{
+		try
+		{
+			await _commandService.RunCommand(cmd, CurrentCommandGroup);
+		}
+		catch (Exception ex)
+		{
+			await _dialogService.ShowMessageBox("錯誤訊息", ex.ToString());
+		}
+	}
+
+	public void GoDetail(CommandGroup item)
+	{
+		NavigationManager.NavigateTo($"/command-detail/{item.CommandKey}");
+	}
+
+	public void OnEditCommand(object item)
+	{
+		//var commandGroups = JsonNode.Parse(JsonSerializer.Serialize(CommandGroups));
+		//Config["CommandGroups"] = commandGroups;
+		//_configService.UpdateConfig(Config);
+		_commandService.SaveAllCommandGroup();
+
+	}
+
+
+	public void AddNewCommand()
+	{
+		NavigationManager.NavigateTo($"/command-update-item");
+	}
+
+	public async void DeleteCommand(CommandGroup item)
+	{
+		var parameters = new DialogParameters();
+		parameters.Add("ContentText", "確定要刪除嗎?");
+		var options = new DialogOptions { CloseOnEscapeKey = true };
+		var dialog = await _dialogService.Show<BasicDialog>("訊息", parameters, options).Result;
+		if (!dialog.Canceled)
+		{
+			CommandGroups.Remove(item);
+			StateHasChanged();
+			_commandService.SaveAllCommandGroup();
+		}
+	}
+
+	public async void DeleteCommandGroup(TableGroupData<object, CommandGroup>
+		item)
+	{
+		var parameters = new DialogParameters();
+		parameters.Add("ContentText", "確定要刪除群組嗎?");
+		var options = new DialogOptions { CloseOnEscapeKey = true };
+		var dialog = await _dialogService.Show<BasicDialog>
+			("訊息", parameters, options).Result;
+		if (!dialog.Canceled)
+		{
+			CommandGroups.RemoveAll(i => i.GroupName == item.Key.ToString());
+			StateHasChanged();
+			_commandService.SaveAllCommandGroup();
+		}
+	}
+
+	public async Task CloseAllProcess()
+	{
+		var parameters = new DialogParameters();
+		parameters.Add("ContentText", "確定要關閉所有的Process嗎?");
+		var options = new DialogOptions { CloseOnEscapeKey = true };
+		var dialog = await _dialogService.Show<BasicDialog>("訊息", parameters, options).Result;
+		if (!dialog.Canceled)
+		{
+			await _commandService.CloseAllProcess();
+			//foreach (var cmdList in CommandGroups.Select(g => g.CommandList).ToList())
+			//{
+			//	foreach (var cmd in cmdList)
+			//	{
+			//		IPInfoHelper.KillProcess(cmd.ProcessId);
+			//		await IPInfoHelper.KillProcessFromPort(cmd.Port);
+			//		cmd.ProcessId = null;
+			//		//cmd.IsRunning = false;
+			//	}
+			//}
+			await _dialogService.ShowMessageBox("訊息", "已關閉所有執行的Process");
+			StateHasChanged();
+			_commandService.SaveAllCommandGroup();
+		}
+
+	}
+
+	public void GoAllProcessLIst()
+	{
+		NavigationManager.NavigateTo($"/command-processes");
+
+	}
+
+	public void CloseCommandGroupList(List<CommandGroup> commandGroups)
+	{
+		foreach (var item in commandGroups)
+		{
+			CloseCommandGroup(item);
+		}
+	}
+
+	public async void CloseCommandGroup(CommandGroup group)
+	{
+		try
+		{
+			_commandService.CloaseCmdGroup(group);
+		}
+		catch (Exception ex)
+		{
+			await _dialogService.ShowMessageBox("錯誤", ex.ToString());
+		}
+	}
+}

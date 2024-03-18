@@ -1,0 +1,341 @@
+﻿@page "/command-update-item/{commandKey?}";
+@using System.Text;
+@inject NavigationManager NavigationManager;
+@inject IDialogService _dialogService
+@inject CommandService _commandService;
+
+
+@if (CurrentCommandGroup == null)
+{
+	<MudForm @ref="AddForm" @bind-IsValid="@success" @bind-Errors="@errors">
+		<MudGrid Justify="Justify.FlexStart">
+			<MudItem xs="12" Class="mt-auto">
+				<MudButtonGroup Variant="Variant.Filled" Color="Color.Info" Size="Size.Medium">
+					<MudButton OnClick="AddNewGroup">新增群組</MudButton>
+					<MudButton OnClick="AddNewCommand">加入新指令</MudButton>
+					<MudButton OnClick="GoBack">返回</MudButton>
+				</MudButtonGroup>
+			</MudItem>
+
+			<MudItem xs="6" Class="mt-auto">
+				<MudTextField @bind-Value="NewGroupName"
+							  Label="指令群組"
+							  Variant="Variant.Text"
+							  Required="true"
+							  RequiredError="欄位不能為空"></MudTextField>
+			</MudItem>
+			<MudItem xs="6" Class="mt-auto">
+				<MudTextField @bind-Value="NewCommandName"
+							  Label="指令名稱"
+							  Variant="Variant.Text"
+							  Required="true"
+							  RequiredError="欄位不能為空"></MudTextField>
+			</MudItem>
+
+
+			@if (NewItems.Count > 0)
+			{
+				@for (int i = 0; i < NewItems.Count; i++)
+				{
+					var Item = NewItems[i];
+					bool disableDeleted = i == 0;
+
+					<MudItem xs="3" Class="mt-auto">
+						<MudTextField @bind-Value="Item.Command"
+									  Label="指令"
+									  Variant="Variant.Text"
+									  Required="true"
+									  RequiredError="欄位不能為空"></MudTextField>
+					</MudItem>
+
+					<MudItem xs="3" Class="mt-auto">
+						<MudTextField @bind-Value="Item.Name"
+									  Label="指令名稱"
+									  Variant="Variant.Text"></MudTextField>
+					</MudItem>
+
+
+
+					<MudItem xs="2" Class="mt-auto">
+						<MudTextField @bind-Value="Item.Port"
+									  Label="Port"
+									  Variant="Variant.Text"></MudTextField>
+					</MudItem>
+
+					<MudItem xs="2" Class="mt-auto">
+						<MudAutocomplete @bind-value="Item.Encoding"
+										 T="string"
+										 Label="選擇編碼"
+										 Disabled="@DisableSelectedEncoding"
+										 SearchFunc="@OnSelectedEncoding"
+										 DebounceInterval="800"
+										 ResetValueOnEmptyText="true"
+										 CoerceText="true"
+										 CoerceValue="true"
+										 AdornmentColor="Color.Primary" />
+					</MudItem>
+
+					@*
+		<MudItem xs="2" Class="mt-auto">
+		<MudTextField @bind-Value="Item.Encoding"
+		Label="編碼"
+		Variant="Variant.Text"></MudTextField>
+		</MudItem>*@
+
+					<MudItem xs="2" Class="mt-auto">
+						<MudButton Color="Color.Error" Disabled="disableDeleted" Variant="Variant.Filled" Size="Size.Small" OnClick="(()=>DeleteNewCommand(Item))">刪除</MudButton>
+					</MudItem>
+
+					<MudItem xs="12" Class="mt-auto">
+						<MudTextField @bind-Value="Item.Arguments"
+									  Label="指令參數"
+									  Variant="Variant.Text"></MudTextField>
+					</MudItem>
+				}
+			}
+
+		</MudGrid>
+	</MudForm>
+}
+else
+{
+	<MudForm @ref="UpdateForm" @bind-IsValid="@success" @bind-Errors="@errors">
+		<MudGrid Justify="Justify.FlexStart">
+			<MudItem xs="12" Class="mt-auto">
+				<MudButtonGroup Variant="Variant.Filled" Color="Color.Info" Size="Size.Medium">
+					<MudButton OnClick="UpdateNewGroup">更新指令群組</MudButton>
+					<MudButton OnClick="AddNewCommand">加入新指令</MudButton>
+					<MudButton OnClick="GoBack">返回</MudButton>
+				</MudButtonGroup>
+			</MudItem>
+
+			<MudItem xs="6" Class="mt-auto">
+				<MudTextField @bind-Value="NewGroupName"
+							  Label="指令群組"
+							  Variant="Variant.Text"
+							  Required="true"
+							  RequiredError="欄位不能為空"></MudTextField>
+			</MudItem>
+			<MudItem xs="6" Class="mt-auto">
+				<MudTextField @bind-Value="NewCommandName"
+							  Label="指令名稱"
+							  Variant="Variant.Text"
+							  Required="true"
+							  RequiredError="欄位不能為空"></MudTextField>
+			</MudItem>
+
+			@for (int i = 0; i < CurrentCommandGroup.CommandList.Count; i++)
+			@*@foreach (var item in CurrentCommandGroup.CommandList)*@
+			{
+				var item = CurrentCommandGroup.CommandList[i];
+				bool disableDeleted = i == 0;
+
+				<MudItem xs="3" Class="mt-auto">
+					<MudTextField @bind-Value="item.Command"
+								  Label="指令"
+								  Variant="Variant.Text"
+								  Required="true"
+								  RequiredError="欄位不能為空"></MudTextField>
+				</MudItem>
+
+				<MudItem xs="3" Class="mt-auto">
+					<MudTextField @bind-Value="item.Name"
+								  Label="指令名稱"
+								  Variant="Variant.Text"></MudTextField>
+				</MudItem>
+
+
+
+				<MudItem xs="2" Class="mt-auto">
+					<MudTextField @bind-Value="item.Port"
+								  Label="Port"
+								  Variant="Variant.Text"></MudTextField>
+				</MudItem>
+
+				<MudItem xs="2" Class="mt-auto">
+					<MudAutocomplete @bind-value="item.Encoding"
+									 T="string"
+									 Label="選擇編碼"
+									 Disabled="@DisableSelectedEncoding"
+									 SearchFunc="@OnSelectedEncoding"
+									 DebounceInterval="800"
+									 ResetValueOnEmptyText="true"
+									 CoerceText="true"
+									 CoerceValue="true"
+									 AdornmentColor="Color.Primary" />
+				</MudItem>
+
+				@*				<MudItem xs="2" Class="mt-auto">
+		<MudTextField @bind-Value="item.Encoding"
+		Label="編碼"
+		Variant="Variant.Text"></MudTextField>
+		</MudItem>*@
+
+				<MudItem xs="2" Class="mt-auto">
+					<MudButton Color="Color.Error" Disabled="disableDeleted" Variant="Variant.Filled" Size="Size.Small" OnClick="(()=>DeleteNewCommand(item))">刪除</MudButton>
+				</MudItem>
+
+				<MudItem xs="12" Class="mt-auto">
+					<MudTextField @bind-Value="item.Arguments"
+								  Label="指令參數"
+								  Variant="Variant.Text"></MudTextField>
+				</MudItem>
+
+			}
+
+		</MudGrid>
+	</MudForm>
+}
+
+@code {
+	private bool success;
+	private MudForm AddForm;
+	private MudForm UpdateForm;
+	private string[] errors = { };
+	private string NewGroupName { get; set; }
+	private string NewCommandName { get; set; }
+
+	public CommandGroup CurrentCommandGroup { get; set; }
+	public List<CommandGroup> CommandGroups { get; set; } = new List<CommandGroup>();
+
+	public List<CommandItem> NewItems { get; set; } = new List<CommandItem>();
+
+	[Parameter]
+	public string CommandKey { get; set; }
+	protected override async Task OnInitializedAsync()
+	{
+		if (string.IsNullOrWhiteSpace(CommandKey))
+		{
+			NewItems = new List<CommandItem>() { new CommandItem { Command = "" } };
+		}
+		else
+		{
+			CommandGroups = await _commandService.GetAllCommandGroups();
+			CurrentCommandGroup = CommandGroups.FirstOrDefault(c => c.CommandKey == CommandKey);
+
+			//CommandGroups = CommandData.CommandGroups;
+			//CurrentCommandGroup = CommandData.CommandGroups.FirstOrDefault(c => c.CommandKey == CommandKey);
+			NewItems = CurrentCommandGroup.CommandList;
+			NewGroupName = CurrentCommandGroup.GroupName;
+			NewCommandName = CurrentCommandGroup.CommandName;
+		}
+	}
+
+	#region Encoding搜尋
+	/// <summary>
+	/// Package名稱輸入
+	/// </summary>
+	string SelectedEncoding { get; set; } = "";
+
+
+	/// <summary>
+	/// 開關Package查詢
+	/// </summary>
+	bool DisableSelectedEncoding { get; set; } = false;
+
+	/// <summary>
+	/// 查詢資料夾內的Package檔案
+	/// </summary>
+	/// <param name="PackageName"></param>
+	/// <returns></returns>
+	private async Task<IEnumerable<string>> OnSelectedEncoding(string programName)
+	{
+
+		return await Task.Run(() =>
+		{
+			if (!string.IsNullOrWhiteSpace(programName))
+			{
+				return new List<string>
+															{
+					"utf-8","big-5"
+															};
+			}
+			return new List<string>();
+		});
+	}
+
+	#endregion Encoding搜尋
+
+
+	public void AddNewCommand()
+	{
+		NewItems.Add(new CommandItem());
+	}
+
+
+	public void DeleteNewCommand(CommandItem item)
+	{
+		NewItems.Remove(item);
+	}
+
+
+	public async void GoBack()
+	{
+		var parameters = new DialogParameters();
+		parameters.Add("ContentText", "確定要放棄修改返回嗎?");
+		var options = new DialogOptions { CloseOnEscapeKey = true };
+		var dialog = await _dialogService.Show<BasicDialog>("訊息", parameters, options).Result;
+		if (!dialog.Canceled)
+		{
+			NewItems.RemoveAll(c => string.IsNullOrWhiteSpace(c.Command));
+			if (string.IsNullOrWhiteSpace(CommandKey))
+			{
+				NavigationManager.NavigateTo("/command-runner");
+			}
+			else
+			{
+				NavigationManager.NavigateTo($"/command-detail/{CurrentCommandGroup.CommandKey}");
+			}
+
+		}
+	}
+
+	public async void SaveAndReturn(string returnUrl)
+	{
+		var parameters = new DialogParameters();
+		parameters.Add("ContentText", "確定要儲存更新?");
+		var options = new DialogOptions { CloseOnEscapeKey = true };
+		var dialog = await _dialogService.Show<BasicDialog>("訊息", parameters, options).Result;
+		if (!dialog.Canceled)
+		{
+			_commandService.SaveAllCommandGroup();
+			NavigationManager.NavigateTo(returnUrl);
+		}
+	}
+
+	public async Task AddNewGroup()
+	{
+		if (AddForm.IsValid)
+		{
+			var newCommandGroup = new CommandGroup
+				{
+					GroupName = NewGroupName,
+					CommandName = NewCommandName,
+					CommandList = NewItems
+				};
+			CommandGroups = await _commandService.GetAllCommandGroups();
+			CommandGroups.Add(newCommandGroup);
+			SaveAndReturn("/command-runner");
+		}
+		else
+		{
+			AddForm.Validate();
+		}
+	}
+
+
+	public async Task UpdateNewGroup()
+	{
+		if (UpdateForm.IsValid)
+		{
+			CurrentCommandGroup.GroupName = NewGroupName;
+			CurrentCommandGroup.CommandName = NewCommandName;
+			SaveAndReturn($"/command-detail/{CurrentCommandGroup.CommandKey}");
+		}
+		else
+		{
+			UpdateForm.Validate();
+		}
+	}
+
+}

@@ -1,0 +1,174 @@
+﻿@page "/report-viewer"
+@using System.Text.Json.Nodes;
+@using System.Text.Json;
+@using System.Text.Encodings.Web;
+
+@inject IConfigServices _configService
+
+<MudGrid Justify="Justify.FlexStart">
+
+	<MudItem xs="12" Class="mt-auto">
+		<MudRadioGroup T="string"
+					   Class="mt-0"
+					   SelectedOption="@SelectedDb"
+					   SelectedOptionChanged="@SelectedOptionChanged">
+			<MudRadio Dense="true" Size="Size.Medium" Option="@("DG")" Color="Color.Primary">DG</MudRadio>
+			<MudRadio Dense="true" Size="Size.Medium" Option="@("VN")" Color="Color.Secondary">VN</MudRadio>
+			<MudRadio Dense="true" Size="Size.Medium" Option="@("VG")" Color="Color.Default">VG</MudRadio>
+		</MudRadioGroup>
+	</MudItem>
+
+	<MudItem xs="12" Class="mt-auto">
+		<MudTextField Label="報表位址"
+					  Value="@SelectSetting.Url"></MudTextField>
+	</MudItem>
+
+	<MudItem xs="12" Class="mt-auto">
+		<MudTextField @bind-Value="@DefaultParamsJson"
+					  Label="報表參數"
+					  Class="mt-0"
+					  Lines="8"></MudTextField>
+	</MudItem>
+
+	<MudItem xs="12" Class="mt-auto">
+		<MudButton Variant="Variant.Filled"
+				   Color="Color.Primary"
+				   OnClick="GetFileStream">測試報表</MudButton>
+	</MudItem>
+
+	@if (!string.IsNullOrWhiteSpace(ImageUrl))
+	{
+		<MudItem xs="12" Class="mt-auto">
+			<MudPaper Height="100vh" Width="100%">
+				<iframe src="@ImageUrl"></iframe>
+
+			</MudPaper>
+		</MudItem>
+	}
+</MudGrid>
+
+@code {
+	private readonly static JsonSerializerOptions defaultSerializerOptions = new JsonSerializerOptions
+		{
+			Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, // 使用不進行跳脫的編碼器
+			WriteIndented = true
+		};
+	public Stream Data { get; set; }
+	public string ImageUrl { get; set; }
+	public string SelectedDb { get; set; } = "DG";
+	public string DefaultParamsJson { get; set; }
+	public ReportSetting SelectSetting { get; set; }
+
+	public Dictionary<string, ReportSetting> ReportSettings { get; set; }
+
+	/// <summary>
+	/// Config設定
+	/// </summary>
+	public JsonNode Config { get; set; }
+	protected override async Task OnInitializedAsync()
+	{
+		_configService.SetDefaultNavPath("/report-viewer");
+		Config = _configService.GetConfig();
+		ReportSettings = Config.ToValue<Dictionary<string, ReportSetting>>("ReportSettings");
+		if (ReportSettings == null)
+		{
+			ReportSettings = new Dictionary<string, ReportSetting>
+				{
+					["DG"] = new ReportSetting
+					{
+						Url = "http://172.29.1.12:8888/reports/rwservlet?userid=johnny_huang/abc123@dgdbt&server=repserver_ap02_oatest&ROLE=MIS_ROLE/MISROLE&destype=cache&desformat=pdf&mispwd=misrole",
+						DefaultParams = new Dictionary<string, string>
+						{
+							["report"] = "mdr340",
+							["title"] = "應付憑單檢核表",
+							["cust_no"] = "SKCS",
+							["factory_no"] = "DGS",
+							["slip_no"] = "230602-001|230602-002",
+							["vendor_no"] = "M070",
+							["yyyymm"] = "202306",
+							["company_no"] = "DGS"
+						}
+					},
+					["VN"] = new ReportSetting
+					{
+						Url = "http://172.32.1.15:8888/reports/rwservlet?userid=JOHNNY_HUANG/abc123@vndbt&server=repserver_vndb&ROLE=MIS_ROLE/MISROLE&destype=cache&desformat=pdf&mispwd=MISROLE",
+						DefaultParams = new Dictionary<string, string>
+						{
+							["report"] = "mdr311"
+						}
+					},
+					["VG"] = new ReportSetting
+					{
+						Url = "http://172.32.1.54:8888/reports/rwservlet?userid=JOHNNY_HUANG/abc123@tc_vgdbt&server=rps_apvn5_vgdb&ROLE=MIS_ROLE/misrole&destype=cache&desformat=PDF&mispwd=misrole&mis_pwd=misrole",
+						DefaultParams = new Dictionary<string, string>
+						{
+							["report"] = "mdr300",
+							["slip_no"] = "VN23088315",
+							["mold_sort"] = "斬刀"
+						}
+					}
+
+				};
+		}
+		Config["ReportSettings"] = JsonObject.Parse(JsonSerializer.Serialize(ReportSettings, defaultSerializerOptions));
+		_configService.UpdateConfig(Config);
+		SelectSetting = ReportSettings[SelectedDb];
+		DefaultParamsJson = JsonSerializer.Serialize(SelectSetting.DefaultParams, defaultSerializerOptions);
+	}
+
+	public void SelectedOptionChanged(string selectedOption)
+	{
+		SelectedDb = selectedOption;
+		SelectSetting = ReportSettings[SelectedDb];
+		DefaultParamsJson = JsonSerializer.Serialize(SelectSetting.DefaultParams, defaultSerializerOptions);
+	}
+
+	public async Task GetFileStream()
+	{
+		var setting = ReportSettings[SelectedDb];
+		var url = setting.Url;
+		var uri = new Uri(url);
+		var queryParams = GetQueryParams(uri);
+
+		var defaultParams = JsonSerializer.Deserialize<Dictionary<string, string>>(DefaultParamsJson);
+
+		foreach (var key in defaultParams.Keys)
+		{
+			if (!queryParams.ContainsKey(key))
+			{
+				queryParams.Add(key, defaultParams[key]);
+			}
+		}
+
+		var newUri = rebuildUri(uri, queryParams);
+
+		var client = new HttpClient();
+		var data = await client.GetAsync(newUri.AbsoluteUri)
+			.Result
+			.Content
+			.ReadAsStreamAsync();
+		await PopulateImageFromStream(data);
+	}
+
+	public async Task PopulateImageFromStream(Stream stream)
+	{
+		MemoryStream ms = new MemoryStream();
+		stream.CopyTo(ms);
+		byte[] byteArray = ms.ToArray();
+		var b64String = Convert.ToBase64String(byteArray);
+		ImageUrl = "data:application/pdf;base64," + b64String;
+	}
+
+	private Dictionary<string, string> GetQueryParams(Uri uri)
+	{
+		return uri.Query.TrimStart('?').Split('&').Select(r => r.Split('=')).ToDictionary(r => r[0], r => r[1]);
+	}
+
+	private Uri rebuildUri(Uri uri, Dictionary<string, string> queryParams)
+	{
+		var newUrl = $"{uri.Scheme}://{uri.Host}:{uri.Port}{uri.AbsolutePath}";
+		newUrl += $"?{string.Join("&", queryParams.Select(r => $"{Uri.EscapeDataString(r.Key)}={Uri.UnescapeDataString(r.Value)}"))}";
+		return new Uri(newUrl);
+	}
+}
+

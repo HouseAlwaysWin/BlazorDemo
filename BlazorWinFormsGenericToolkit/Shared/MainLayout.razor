@@ -1,0 +1,174 @@
+﻿@using AutoUpdaterDotNET;
+@using BlazorWinFormsGenericToolKit.Services.Converters;
+@using MudBlazor.Utilities;
+@using System.Text.Json.Nodes;
+@using System.Text.Json;
+@using System.Text;
+@using System.Text.Unicode;
+@using System.Text.Json.Serialization;
+@using System.Reflection;
+@using System.Diagnostics;
+@inherits LayoutComponentBase
+@inject IConfigServices _configService
+@inject IDialogService _dialogService
+@inject NavigationManager NavigationManager;
+
+<MudThemeProvider Theme="_themeManager.Theme" @bind-IsDarkMode="@IsDarkMode" />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+
+	<MudAppBar Elevation="_themeManager.AppBarElevation">
+		<MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" />
+		<MudSpacer />
+
+		<MudIconButton Icon="@Icons.Material.Filled.DarkMode" Color="Color.Inherit" OnClick="@OnDarkModeToggle" />
+		<MudMenu Icon="@Icons.Material.Filled.MoreVert">
+			<MudMenuItem OnClick="@((e) => OpenThemeManager(true))">編輯主題</MudMenuItem>
+			<MudMenuItem OnClick="ResetTheme">重設主題</MudMenuItem>
+			<MudMenuItem OnClick="OpenSecretsJson">secrets.json</MudMenuItem>
+		</MudMenu>
+
+
+	</MudAppBar>
+	<MudDrawer @bind-Open="_drawerOpen" ClipMode="_themeManager.DrawerClipMode" Elevation="_themeManager.DrawerElevation">
+		<MudDrawerHeader>
+			<MudText Typo="Typo.h6">工具集</MudText>
+		</MudDrawerHeader>
+		<NavMenu />
+	</MudDrawer>
+	<MudMainContent>
+		<MudContainer Fixed="true" MaxWidth="MaxWidth.Large" Class="pt-4">
+			@Body
+		</MudContainer>
+	</MudMainContent>
+	<MudThemeManager Open="_themeManagerOpen" OpenChanged="OpenThemeManager" Theme="_themeManager" ThemeChanged="UpdateTheme"  />
+
+	<MudScrollToTop>
+		<MudFab Color="Color.Tertiary" Icon="@Icons.Material.Filled.ArrowCircleUp" />
+	</MudScrollToTop>
+</MudLayout>
+@code {
+	bool _drawerOpen = false;
+	private ThemeManagerTheme _themeManager = new ThemeManagerTheme();
+	private static Process _openVSCodeProccess;
+
+	public bool _themeManagerOpen = false;
+	public bool IsDarkMode = false;
+	JsonNode _config;
+
+	void DrawerToggle()
+	{
+		_drawerOpen = !_drawerOpen;
+	}
+
+	void OpenThemeManager(bool value)
+	{
+		_themeManagerOpen = value;
+	}
+
+	/// <summary>
+	/// 主題更新
+	/// </summary>
+	/// <param name="value"></param>
+	void UpdateTheme(ThemeManagerTheme value)
+	{
+		UpdateThemeConfig();
+		StateHasChanged();
+	}
+
+
+	/// <summary>
+	/// 改變模式
+	/// </summary>
+	/// <param name="value"></param>
+	void OnDarkModeToggle()
+	{
+		IsDarkMode = !IsDarkMode;
+		_config["IsDarkMode"] = IsDarkMode;
+		_configService.UpdateConfig(_config);
+		StateHasChanged();
+	}
+
+	protected override void OnInitialized()
+	{
+		_config = _configService.GetConfig();
+		IsDarkMode = _config.ToValue<bool>("IsDarkMode");
+		var themeJsonNode = _config.ToValue("Theme");
+		if (themeJsonNode != null)
+		{
+			try
+			{
+				JsonSerializerOptions options = new JsonSerializerOptions();
+				options.Converters.Add(new MudColorConverter());
+				var themeConfig = System.Text.Json.JsonSerializer.Deserialize<MudTheme>(themeJsonNode, options);
+				_themeManager.Theme = themeConfig;
+			}
+			catch (Exception ex)
+			{
+				_themeManager.Theme = new MudTheme();
+			}
+		}
+		else
+		{
+			_themeManager.Theme = new MudTheme();
+		}
+		var defaultPath = _config.ToValue("DefaultPath");
+		if (!string.IsNullOrWhiteSpace(defaultPath))
+		{
+			NavigationManager.NavigateTo(defaultPath);
+		}
+
+		StateHasChanged();
+	}
+
+	async Task ResetTheme()
+	{
+		var parameters = new DialogParameters();
+		parameters.Add("ContentText", "確定把主題回復為預設?");
+		var options = new DialogOptions { CloseOnEscapeKey = true };
+		var dialog = await _dialogService.Show<BasicDialog>("訊息", parameters, options).Result;
+		if (!dialog.Cancelled)
+		{
+			UpdateThemeConfig();
+			StateHasChanged();
+		}
+	}
+
+
+	void UpdateThemeConfig()
+	{
+		_configService.UpdateConfig(_config);
+	}
+
+	private async Task OpenSecretsJson()
+	{
+		string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Microsoft", "UserSecrets");
+		var files = Directory.GetFiles(path, "secrets.json", SearchOption.AllDirectories).ToList();
+
+		if (files == null || files.Count == 0)
+		{
+			await _dialogService.ShowMessageBox("錯誤", "找不到secrets.json");
+		}
+
+		var secretsFile = files.FirstOrDefault();
+
+		if (_openVSCodeProccess == null)
+		{
+			_openVSCodeProccess = new Process();
+			ProcessStartInfo startInfo = new ProcessStartInfo
+				{
+					FileName = "cmd.exe",
+					Arguments = @"/k" + $"code -g {secretsFile}",
+					CreateNoWindow = true
+				};
+			_openVSCodeProccess.StartInfo = startInfo;
+		}
+		else
+		{
+			_openVSCodeProccess.StartInfo.Arguments = @"/k" + $"code -g {secretsFile}";
+		}
+		_openVSCodeProccess.Start();
+	}
+}

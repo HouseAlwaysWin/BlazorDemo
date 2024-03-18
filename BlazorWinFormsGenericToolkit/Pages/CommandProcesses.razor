@@ -1,0 +1,141 @@
+﻿@page "/command-processes"
+@using System.Linq.Expressions;
+@inject IDialogService _dialogService
+@inject NavigationManager NavigationManager;
+
+
+<MudGrid Justify="Justify.FlexStart" Spacing="2">
+
+	<MudItem Class="mt-auto">
+		<MudButton Color="Color.Info" Variant="Variant.Outlined" Size="Size.Medium" OnClick="@(e => Reset())">重整</MudButton>
+	</MudItem>
+
+	<MudItem Class="mt-auto">
+		<MudButton Color="Color.Secondary" Variant="Variant.Outlined" Size="Size.Medium" OnClick="@(e => GoBack())">返回</MudButton>
+	</MudItem>
+
+	<MudItem xs="12" Class="mt-auto">
+		<MudTable T="NetworkInfo"
+				  Items="@NetworkInfos"
+				  Hover="true"
+				  Dense="true"
+				  Breakpoint="Breakpoint.Sm"
+				  Loading="@_loading"
+				  LoadingProgressColor="Color.Info"
+				  Filter="new Func<NetworkInfo,bool>(FilterFunc1)">
+			<ToolBarContent>
+				<MudText Typo="Typo.h6">網路主機Process列表</MudText>
+				<MudSpacer />
+				<MudTextField @bind-Value="SearchProcess" Placeholder="Search" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+			</ToolBarContent>
+			<HeaderContent>
+				<MudTh><MudTableSortLabel SortBy="SortBy(x=>x.PID)">PID</MudTableSortLabel></MudTh>
+				<MudTh>協定</MudTh>
+				<MudTh><MudTableSortLabel SortBy="SortBy(x=>x.LocalAddress)">本機位置</MudTableSortLabel></MudTh>
+				<MudTh><MudTableSortLabel SortBy="SortBy(x=>x.LocalPort)">本機Port</MudTableSortLabel></MudTh>
+				<MudTh><MudTableSortLabel SortBy="SortBy(x=>x.ExternalAddress)">外部位置</MudTableSortLabel></MudTh>
+				<MudTh><MudTableSortLabel SortBy="SortBy(x=>x.ExternalPort)">外部Port</MudTableSortLabel></MudTh>
+				<MudTh><MudTableSortLabel SortBy="SortBy(x=>x.Status)">狀態</MudTableSortLabel></MudTh>
+				<MudTh>刪除</MudTh>
+			</HeaderContent>
+			<RowTemplate>
+				<MudTd>
+					@context.PID
+				</MudTd>
+
+				<MudTd>@context.Protocol</MudTd>
+				<MudTd>
+					@context.LocalAddress
+				</MudTd>
+				<MudTd>
+					@context.LocalPort
+				</MudTd>
+				<MudTd>
+					@context.ExternalAddress
+				</MudTd>
+				<MudTd>
+					@context.ExternalPort
+				</MudTd>
+				<MudTd>
+					@context.Status
+				</MudTd>
+				<MudTd>
+					<MudButton Color="Color.Error" Variant="Variant.Filled" Size="Size.Small" OnClick="@(e => KillProcess(context))">刪除</MudButton>
+				</MudTd>
+			</RowTemplate>
+		</MudTable>
+	</MudItem>
+</MudGrid>
+@code {
+	public string SearchProcess { get; set; }
+	private bool _loading;
+	public List<NetworkInfo> NetworkInfos { get; set; } = new List<NetworkInfo>();
+
+	public Func<NetworkInfo, object> SortBy(Func<NetworkInfo, object> network)
+	{
+		return network;
+	}
+
+	protected override async Task OnInitializedAsync()
+	{
+		await Reset();
+	}
+
+	public async Task KillProcess(NetworkInfo context)
+	{
+		var parameters = new DialogParameters();
+		parameters.Add("ContentText", @$"確定要刪除Process PID:{context.PID}嗎?");
+		var options = new DialogOptions { CloseOnEscapeKey = true };
+		var dialog = await _dialogService.Show<BasicDialog>
+			("訊息", parameters, options).Result;
+		if (!dialog.Canceled)
+		{
+			try
+			{
+				ProcessTaskHelper.KillProcess(context.PID);
+				NetworkInfos = await ProcessTaskHelper.GetNetworkStates();
+			}
+			catch (Exception ex)
+			{
+
+			}
+		}
+	}
+
+	public async Task Reset()
+	{
+		NetworkInfos.Clear();
+		_loading = true;
+		NetworkInfos = await ProcessTaskHelper.GetNetworkStates();
+		_loading = false;
+
+	}
+
+	public void GoBack()
+	{
+		NavigationManager.NavigateTo("/command-runner");
+	}
+
+	private bool FilterFunc1(NetworkInfo element) => FilterFunc(element, SearchProcess);
+
+	private bool FilterFunc(NetworkInfo element, string searchString)
+	{
+		if (string.IsNullOrWhiteSpace(searchString))
+			return true;
+		if (element.PID.ToString().Contains(searchString, StringComparison.OrdinalIgnoreCase))
+			return true;
+		if (element.LocalAddress.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+			return true;
+		if (element.LocalPort.ToString().Contains(searchString, StringComparison.OrdinalIgnoreCase))
+			return true;
+		if (element.ExternalAddress.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+			return true;
+		if (element.ExternalPort.ToString().Contains(searchString, StringComparison.OrdinalIgnoreCase))
+			return true;
+		if (element.Protocol.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+			return true;
+		if (element.Status.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+			return true;
+		return false;
+	}
+}
