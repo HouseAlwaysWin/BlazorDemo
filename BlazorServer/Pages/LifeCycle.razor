@@ -1,67 +1,84 @@
-﻿<h3>@Title</h3>
+﻿<label>
+    <input type="checkbox" @bind="shouldRender" />
+    是否開始渲染畫面
+</label>
+
+
+<h3>@Title</h3>
 <h3>@CascadingObject.Title</h3>
 <h3>@CascadingObject2.Title</h3>
 
+
+
 @if (LifeCycleList.Count > 0)
 {
-	@foreach (var item in LifeCycleList)
-	{
-		<h4>@item</h4>
-	}
+    @foreach (var item in LifeCycleList)
+    {
+        <h4>@item</h4>
+    }
 }
 
 @code {
-	[Parameter]
-	public string Title { get; set; }
 
-	[CascadingParameter(Name = "Object1")]
-	public CascadingObject CascadingObject { get; set; }
+    [Parameter]
+    public string Title { get; set; }
 
-	[CascadingParameter(Name = "Object2")]
-	public CascadingObject CascadingObject2 { get; set; }
+    [CascadingParameter(Name = "Object1")]
+    public CascadingObject CascadingObject { get; set; }
 
-	public int AfterRenderCounter = 1;
+    [CascadingParameter(Name = "Object2")]
+    public CascadingObject CascadingObject2 { get; set; }
 
-	public bool SetParam = false;
-	public bool OnInit = false;
-	public bool OnParameter = false;
-	public bool OnAfterRender = false;
-	public List<string> LifeCycleList = new List<string>();
+    public bool shouldRender = false;
 
-	public override async Task SetParametersAsync(ParameterView parameters)
-	{
-		var p = string.Empty;
-		parameters.TryGetValue("Title", out p);
 
-		LifeCycleList.Add("SetParametersAsync");
-		await base.SetParametersAsync(parameters);
-	}
 
-	protected override async Task OnInitializedAsync()
-	{
-		LifeCycleList.Add("OnInitializedAsync");
-	}
+    public int AfterRenderCounter = 1;
 
-	protected override async Task OnParametersSetAsync()
-	{
-		LifeCycleList.Add("OnParametersSetAsync");
-	}
+    public bool SetParam = false;
+    public bool OnInit = false;
+    public bool OnParameter = false;
+    public bool OnAfterRender = false;
+    public List<string> LifeCycleList = new List<string>();
 
-	protected override async Task OnAfterRenderAsync(bool firstRender)
-	{
-		if (firstRender)
-		{
-			LifeCycleList.Add($"第{AfterRenderCounter}次 OnAfterRenderAsync");
-			StateHasChanged();
-		}
-		else
-		{
-			await Task.Delay(1000);
-			LifeCycleList.Add($"第{AfterRenderCounter}次 OnAfterRenderAsync");
-			StateHasChanged();
-		}
-		AfterRenderCounter++;
-	}
+    public override async Task SetParametersAsync(ParameterView parameters)
+    {
+        var title = parameters.GetValueOrDefault<string>("Title");
+        var cdingObject = parameters.GetValueOrDefault<CascadingObject>("CascadingObject");
+        var cascadingObject2 = parameters.GetValueOrDefault<CascadingObject>("CascadingObject2");
+        LifeCycleList.Add("SetParametersAsync");
+        await base.SetParametersAsync(parameters);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        LifeCycleList.Add("OnInitializedAsync");
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        LifeCycleList.Add("OnParametersSetAsync");
+    }
+
+    protected override bool ShouldRender()
+    {
+        return shouldRender;
+    }
+
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            AfterRenderCounter = 1;
+            LifeCycleList.Add($"第{AfterRenderCounter}次 OnAfterRenderAsync");
+        }
+        else
+        {
+            LifeCycleList.Add($"第{AfterRenderCounter}次 OnAfterRenderAsync");
+        }
+        AfterRenderCounter++;
+    }
 
 
 }

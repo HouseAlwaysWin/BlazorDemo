@@ -1,7 +1,24 @@
 ﻿@page "/life-cycle-demo"
 
-<LifeCycle Title="LifeCycle 參數(從[Parameter]取得)"></LifeCycle>
+<button @onclick="ChangedParamSet">改變變數觸發OnParametersSetAsync</button>
+<br />
+
+<LifeCycle Title="@Title"></LifeCycle>
 
 @code {
+    public string Title = "LifeCycle 參數(從[Parameter]取得)";
+
+    public void ChangedParamSet()
+    {
+        if (Title == "LifeCycle 參數(從[Parameter]取得)")
+        {
+            Title = "父類別抬頭改變";
+        }
+        else
+        {
+            Title = "LifeCycle 參數(從[Parameter]取得)";
+        }
+
+    }
 
 }
