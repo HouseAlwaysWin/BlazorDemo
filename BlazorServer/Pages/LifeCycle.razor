@@ -20,6 +20,8 @@
 	[CascadingParameter(Name = "Object2")]
 	public CascadingObject CascadingObject2 { get; set; }
 
+	public int AfterRenderCounter = 1;
+
 	public bool SetParam = false;
 	public bool OnInit = false;
 	public bool OnParameter = false;
@@ -38,30 +40,27 @@
 	protected override async Task OnInitializedAsync()
 	{
 		LifeCycleList.Add("OnInitializedAsync");
-		await base.OnInitializedAsync();
 	}
 
 	protected override async Task OnParametersSetAsync()
 	{
 		LifeCycleList.Add("OnParametersSetAsync");
-		await base.OnParametersSetAsync();
-
 	}
 
 	protected override async Task OnAfterRenderAsync(bool firstRender)
 	{
 		if (firstRender)
 		{
-			LifeCycleList.Add("第一次 OnAfterRenderAsync");
+			LifeCycleList.Add($"第{AfterRenderCounter}次 OnAfterRenderAsync");
 			StateHasChanged();
 		}
 		else
 		{
 			await Task.Delay(1000);
-			LifeCycleList.Add("非第一次 OnAfterRenderAsync");
+			LifeCycleList.Add($"第{AfterRenderCounter}次 OnAfterRenderAsync");
 			StateHasChanged();
 		}
-		await base.OnAfterRenderAsync(firstRender);
+		AfterRenderCounter++;
 	}
 
 
