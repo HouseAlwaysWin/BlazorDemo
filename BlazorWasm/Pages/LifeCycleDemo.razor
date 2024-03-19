@@ -1,24 +1,26 @@
 ﻿@page "/life-cycle-demo"
 
-<button @onclick="ChangedParamSet">改變變數觸發OnParametersSetAsync</button>
-<br />
+<div>
+	<button class="btn btn-primary" @onclick="ChangedParamSet">改變變數觸發OnParametersSetAsync</button>
+	<br />
 
-<LifeCycle Title="@Title"></LifeCycle>
+	<LifeCycle Title="@Title"></LifeCycle>
+</div>
 
 @code {
-    public string Title = "LifeCycle 參數(從[Parameter]取得)";
+	public string Title = "參數(從[Parameter]取得)";
 
-    public void ChangedParamSet()
-    {
-        if (Title == "LifeCycle 參數(從[Parameter]取得)")
-        {
-            Title = "父類別抬頭改變";
-        }
-        else
-        {
-            Title = "LifeCycle 參數(從[Parameter]取得)";
-        }
+	public void ChangedParamSet()
+	{
+		if (Title == "參數(從[Parameter]取得)")
+		{
+			Title = "父類別改變";
+		}
+		else
+		{
+			Title = "參數(從[Parameter]取得)";
+		}
 
-    }
+	}
 
 }
