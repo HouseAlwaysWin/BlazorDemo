@@ -7,20 +7,4 @@
 	<LifeCycle Title="@Title"></LifeCycle>
 </div>
 
-@code {
-	public string Title = "參數(從[Parameter]取得)";
 
-	public void ChangedParamSet()
-	{
-		if (Title == "參數(從[Parameter]取得)")
-		{
-			Title = "父類別改變";
-		}
-		else
-		{
-			Title = "參數(從[Parameter]取得)";
-		}
-
-	}
-
-}

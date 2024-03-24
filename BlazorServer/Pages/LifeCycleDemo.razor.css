@@ -1,3 +1,7 @@
 ﻿::deep .father {
     color: purple;
 }
+
+.father2 {
+    color: blue;
+}
